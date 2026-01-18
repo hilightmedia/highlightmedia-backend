@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String    @unique @db.VarChar(60)
+  password     String    @db.VarChar(255)
+  otp          String?   @db.VarChar(6)
+  otpExpiresAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("AdminUsers")
+}
+
+model Folder {
+  id            Int       @id @default(autoincrement())
+  name          String
+  validityStart DateTime?
+  validityEnd   DateTime?
+  verified      Boolean   @default(false)
+  isDeleted     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  files File[]
+
+  @@map("Folders")
+}
+
+model File {
+  id        Int       @id @default(autoincrement())
+  name      String
+  folderId  Int
+  verified  Boolean   @default(false)
+  fileType  String    @db.VarChar(30)
+  fileKey   String    @unique @db.VarChar(1000)
+  fileSize  String
+  isDeleted Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  folder        Folder         @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  playlistFiles PlaylistFile[]
+  playLogs      PlayLog[]
+
+  @@index([folderId])
+  @@index([name])
+  @@map("Files")
+}
+
+model Playlist {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique
+  defaultDuration Int      @default(30)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  playlistFiles PlaylistFile[] @relation("PlaylistToPlaylistFiles")
+  subPlaylists  PlaylistFile[] @relation("SubPlaylistToPlaylistFiles")
+  players       Player[]
+
+  playLogs    PlayLog[] @relation("PlayLogPlaylist")
+  subPlayLogs PlayLog[] @relation("PlayLogSubPlaylist")
+
+  @@map("Playlist")
+}
+
+model PlaylistFile {
+  id            Int      @id @default(autoincrement())
+  playlistId    Int
+  fileId        Int?
+  subPlaylistId Int?
+  isSubPlaylist Boolean  @default(false)
+  duration      Int
+  playOrder     Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  playlist    Playlist  @relation("PlaylistToPlaylistFiles", fields: [playlistId], references: [id], onDelete: Cascade)
+  file        File?     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  subPlaylist Playlist? @relation("SubPlaylistToPlaylistFiles", fields: [subPlaylistId], references: [id], onDelete: Cascade)
+
+  playLogs PlayLog[]
+
+  @@index([playlistId])
+  @@index([playlistId, playOrder])
+  @@index([playlistId, fileId])
+  @@index([playlistId, subPlaylistId])
+  @@map("PlaylistFiles")
+}
+
+model Player {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  deviceCode String   @unique @db.VarChar(16)
+  deviceKey  String   @unique @db.VarChar(16)
+  playlistId Int?
+  location   String   @db.VarChar(100)
+  linked     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  playlist Playlist?       @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  sessions PlayerSession[]
+  playLogs PlayLog[]
+
+  @@index([playlistId])
+  @@map("Players")
+}
+
+model PlayerSession {
+  id        Int       @id @default(autoincrement())
+  playerId  Int
+  startedAt DateTime
+  endedAt   DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Restrict)
+
+  @@index([playerId])
+  @@map("PlayerSessions")
+}
+
+model PlayLog {
+  id             Int      @id @default(autoincrement())
+  playerId       Int
+  playlistFileId Int?
+  fileId         Int
+  playlistId     Int?
+  subPlaylistId  Int?
+  isSubPlaylist  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  player       Player        @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  playlistFile PlaylistFile? @relation(fields: [playlistFileId], references: [id], onDelete: SetNull)
+  file         File          @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  playlist     Playlist?     @relation("PlayLogPlaylist", fields: [playlistId], references: [id], onDelete: SetNull)
+  subPlaylist  Playlist?     @relation("PlayLogSubPlaylist", fields: [subPlaylistId], references: [id], onDelete: SetNull)
+
+  @@index([playerId])
+  @@index([playlistFileId])
+  @@index([fileId])
+  @@index([playlistId])
+  @@index([subPlaylistId])
+  @@map("PlayLogs")
+}

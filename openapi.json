@@ -1,0 +1,3197 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Skolara API",
+    "description": "Backend for searching colleges, managing applications, and processing payments.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:8000/api" },
+    { "url": "https://devapi.skolara.in/api" }
+  ],
+  "tags": [
+    { "name": "Health", "description": "Service health checks" },
+    {
+      "name": "Auth",
+      "description": "OTP, login, signup, and token endpoints"
+    },
+    { "name": "Colleges", "description": "Colleges and colleges search" },
+    { "name": "User", "description": "User Management" },
+    { "name": "Uploads", "description": "Document uploads" },
+    { "name": "Notifications", "description": "User notifications" },
+    {
+      "name": "Support & FAQs",
+      "description": "Customer support and frequently asked questions"
+    },
+    {
+      "name": "Payments",
+      "description": "Create/cancel orders, verify and record payment failures"
+    },
+    {
+      "name": "Tickets",
+      "description": "Support ticket management - create, view, and manage support tickets"
+    }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/health": {
+      "get": {
+        "security": [],
+        "tags": ["Health"],
+        "summary": "Health check",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "examples": { "ok": { "value": { "status": "ok" } } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/otp/send": {
+      "post": {
+        "security": [],
+        "tags": ["Auth"],
+        "summary": "Send OTP to a mobile number",
+        "operationId": "sendOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OtpSendRequest" },
+              "examples": { "default": { "value": { "mobile": "9876543210" } } }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP created and SMS dispatched",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OtpSendResponse" },
+                "examples": {
+                  "sent": {
+                    "value": {
+                      "verificationId": "a9b8b8f2-5e7c-4a0a-90a1-6c0f3b5f9a21",
+                      "expiresAt": "2025-01-01T10:05:00.000Z",
+                      "message": "OTP_SENT"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Failed to create/send OTP",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": { "generic": { "value": { "error": "FAILED" } } }
+              }
+            }
+          },
+          "429": {
+            "description": "Route-level rate limit exceeded (per mobile / IP)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequestsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/otp/verify": {
+      "post": {
+        "security": [],
+        "tags": ["Auth"],
+        "summary": "Verify OTP for a mobile number",
+        "operationId": "verifyOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OtpVerifyRequest" },
+              "examples": {
+                "default": {
+                  "value": { "mobile": "9876543210", "otp": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTP verified",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OtpVerifyResponse" },
+                "examples": {
+                  "verified": {
+                    "value": {
+                      "verificationId": "a9b8b8f2-5e7c-4a0a-90a1-6c0f3b5f9a21",
+                      "verified": true,
+                      "message": "OTP_VERIFIED",
+                      "newUser": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid/expired OTP or attempts exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalid": { "value": { "error": "INVALID_OTP" } }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Route-level rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TooManyRequestsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "security": [],
+        "tags": ["Auth"],
+        "summary": "Login after OTP verify (within 30 seconds)",
+        "operationId": "loginWithOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "verificationId": "a9b8b8f2-5e7c-4a0a-90a1-6c0f3b5f9a21",
+                    "mobile": "9876543210"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthTokensWithUser" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized or OTP window expired",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "expired": { "value": { "error": "OTP_WINDOW_EXPIRED" } },
+                  "unauth": { "value": { "error": "UNAUTHORIZED" } },
+                  "notFound": { "value": { "error": "USER_NOT_FOUND" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/signup": {
+      "post": {
+        "security": [],
+        "tags": ["Auth"],
+        "summary": "Signup after OTP verify (within ~8 minutes)",
+        "operationId": "signupWithOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SignupRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "verificationId": "a9b8b8f2-5e7c-4a0a-90a1-6c0f3b5f9a21",
+                    "mobile": "9876543210",
+                    "first_name": "User",
+                    "last_name": "Skolara",
+                    "email": "user@example.com",
+                    "course_type_id": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signup successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuthTokensWithUser" }
+              }
+            }
+          },
+          "401": {
+            "description": "Duplicate/disabled account",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "mobileExists": {
+                    "value": { "error": "MOBILE_ALREADY_EXISTS" }
+                  },
+                  "emailExists": {
+                    "value": { "error": "EMAIL_ALREADY_EXISTS" }
+                  },
+                  "disabled": { "value": { "error": "ACCOUNT_DISABLED" } }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid signup window or other failure",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "failed": { "value": { "error": "SIGNUP_FAILED" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "security": [],
+        "tags": ["Auth"],
+        "summary": "Exchange refresh token for new access token",
+        "operationId": "exchangeRefreshToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TokenRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New access token issued",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized / invalid refresh token / inactive user",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "unauth": { "value": { "error": "UNAUTHORIZED" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/profile": {
+      "get": {
+        "tags": ["User"],
+        "summary": "Get User Profile",
+        "operationId": "getUserProfile",
+        "responses": {
+          "200": {
+            "description": "Profile fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GetUserResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": { "$ref": "#/components/responses/JWTForbidden" }
+        }
+      },
+      "put": {
+        "tags": ["User"],
+        "summary": "Update User Profile",
+        "operationId": "updateUserProfile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserProfileRequest"
+              },
+              "examples": {
+                "valid": {
+                  "value": {
+                    "first_name": "User",
+                    "last_name": "Skolara",
+                    "email": "user@example.com",
+                    "mobile": "9876543210",
+                    "gender": "Male",
+                    "dob": "2001-12-31"
+                  }
+                },
+                "nullables": {
+                  "value": {
+                    "first_name": "User",
+                    "last_name": "Skolara",
+                    "email": "user@example.com",
+                    "mobile": "9876543210",
+                    "gender": null,
+                    "dob": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateUserProfileResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": { "message": "Profile updated successfully" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or email/mobile conflict",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "conflict": {
+                    "value": { "error": "Email or Mobile already exists" }
+                  },
+                  "invalid": { "value": { "error": "INVALID_REQUEST" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": { "$ref": "#/components/responses/JWTForbidden" },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "notFound": { "value": { "error": "User not found" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/colleges": {
+      "get": {
+        "tags": ["Colleges"],
+        "summary": "List colleges",
+        "operationId": "getColleges",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "schema": { "type": "number" },
+            "required": false,
+            "description": "Filter by category (college_type_id)"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": { "type": "string" },
+            "required": false,
+            "description": "Search by name (prefix match) or short name (contains)"
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": { "type": "string" },
+            "required": false,
+            "description": "Alias of `search`. If both provided, `search` takes precedence."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of colleges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollegeListResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": [
+                      {
+                        "id": "clg_abc123",
+                        "name": "Skolara Institute of Tech",
+                        "area": "Koramangala",
+                        "city": "Bengaluru",
+                        "logo_url": "https://cdn.example.com/logo.png",
+                        "is_applied": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter (e.g., category not a number)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidCategory": {
+                    "value": { "error": "Invalid 'category' value" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" }
+        }
+      }
+    },
+    "/colleges/{id}": {
+      "get": {
+        "tags": ["Colleges"],
+        "summary": "Get college by ID",
+        "operationId": "getCollegeById",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "College details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollegeDetail" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "College not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nf": { "value": { "error": "College not found" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/colleges/category": {
+      "get": {
+        "security": [],
+        "tags": ["Colleges"],
+        "summary": "List college categories",
+        "operationId": "getCollegeCategories",
+        "responses": {
+          "200": {
+            "description": "Category list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryListResponse"
+                },
+                "examples": {
+                  "ok": { "value": [{ "id": 1, "name": "Engineering" }] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/colleges/save": {
+      "post": {
+        "tags": ["Colleges"],
+        "summary": "Toggle save college",
+        "operationId": "saveCollege",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SaveCollegeRequest" },
+              "examples": {
+                "default": { "value": { "college_id": "clg_abc123" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "College saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveCollegeResponse"
+                },
+                "examples": {
+                  "saved": {
+                    "value": { "message": "College saved", "saved": true }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Save toggled (either saved or removed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveCollegeResponse"
+                },
+                "examples": {
+                  "removed": {
+                    "value": {
+                      "message": "College removed from saved",
+                      "saved": false
+                    }
+                  },
+                  "reSaved": {
+                    "value": { "message": "College saved", "saved": true }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "College not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nf": { "value": { "error": "College not found" } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Colleges"],
+        "summary": "List saved colleges",
+        "operationId": "getSavedColleges",
+        "responses": {
+          "200": {
+            "description": "Saved colleges for the authenticated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollegeListResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": [
+                      {
+                        "id": "clg_abc123",
+                        "name": "Skolara Institute of Tech",
+                        "area": "Koramangala",
+                        "city": "Bengaluru",
+                        "logo_url": "https://cdn.example.com/logo.png",
+                        "is_applied": true
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" }
+        }
+      }
+    },
+
+    "/colleges/applied": {
+      "get": {
+        "tags": ["Colleges"],
+        "summary": "List applied colleges",
+        "operationId": "getAppliedColleges",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of colleges the user has applied to",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedCollegeListResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": [
+                      {
+                        "id": "app_abc123",
+                        "applied_at": "2025-03-01T10:15:00.000Z",
+                        "ready_to_pay": false,
+                        "documents_verified_at": null,
+                        "reviewed_at": null,
+                        "submitted_at": null,
+                        "accepted_at": null,
+                        "paid_at": null,
+                        "paid": false,
+                        "is_active": true,
+                        "amount": 5000,
+                        "application_status_id": 2,
+                        "status": "Pending",
+                        "hsc_path": null,
+                        "hsc_signed_url": null,
+                        "sslc_path": "docs/sslc/abc.pdf",
+                        "sslc_signed_url": "https://signed-url.com/docs/sslc/abc.pdf",
+                        "college": {
+                          "id": "clg_abc123",
+                          "name": "Skolara Institute of Tech",
+                          "area": "Koramangala",
+                          "city": "Bengaluru",
+                          "logo_url": "https://cdn.example.com/logo.png"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" }
+        }
+      }
+    },
+    "/colleges/apply": {
+      "post": {
+        "tags": ["Colleges"],
+        "summary": "Apply to a college",
+        "operationId": "applyCollege",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCollegeRequest"
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "college_id": "clg_abc123",
+                    "hsc_path": "docs/hsc/123.pdf",
+                    "sslc_path": "docs/sslc/123.pdf"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "College application created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyCollegeResponse"
+                },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "message": "College applied",
+                      "applicationId": "app_abc123"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request (e.g., already applied for the college)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "alreadyApplied": {
+                    "value": {
+                      "message": "You have already applied for this college"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "College not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "notFound": {
+                    "value": { "error": "College not found" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/post-payment-notes": {
+      "post": {
+        "tags": ["Colleges"],
+        "summary": "Get post-payment notes and files for an application",
+        "operationId": "getAfterPaymentNotes",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["application_id"],
+                "properties": {
+                  "application_id": { "type": "string", "format": "uuid" }
+                },
+                "additionalProperties": false
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "application_id": "5c3ed8b2-9a0e-4c2e-8f81-8b0b1e8e0d77"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notes and files fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AfterPaymentNotesResponse" },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "notes": {
+                        "id": 1,
+                        "description": "Important joining instructions...",
+                        "created_at": "2025-01-15T10:00:00.000Z",
+                        "updated_at": "2025-01-15T10:00:00.000Z"
+                      },
+                      "files": [
+                        {
+                          "id": 10,
+                          "title": "Admission Brochure",
+                          "sub_title": "2025 Intake",
+                          "file_path": "collegeRef/post-payment/brochure.pdf",
+                          "signed_url": "https://signed.url/example",
+                          "created_at": "2025-01-15T09:00:00.000Z",
+                          "updated_at": "2025-01-15T09:00:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid application_id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Application not found for user or payment not completed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploads/application/{type}": {
+      "put": {
+        "tags": ["Uploads"],
+        "summary": "Upload Application Document",
+        "operationId": "uploadApplicationDocument",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["hsc", "sslc"]
+            },
+            "description": "Type of application document to upload"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "PDF document to upload"
+                  }
+                },
+                "required": ["file"]
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Example file upload",
+                  "value": {
+                    "file": "(binary PDF file)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileUploadResponse" },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "message": "File uploaded successfully",
+                      "path": "user123/application/hsc/1697238123-abc123-file.pdf",
+                      "signedUrl": "https://signed.url.example.com/file.pdf"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or file error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "noFile": { "value": { "message": "No file provided" } },
+                  "invalidType": {
+                    "value": { "message": "Only PDF files are allowed" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/JWTUnauthorized"
+          },
+          "406": {
+            "description": "Invalid content type",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidContentType": {
+                    "value": { "message": "Invalid content type" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/uploads/account/{type}": {
+      "put": {
+        "tags": ["Uploads"],
+        "summary": "Upload Account Document",
+        "operationId": "uploadAccountDocument",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Type of account document to upload"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "PDF document to upload"
+                  }
+                },
+                "required": ["file"]
+              },
+              "examples": {
+                "valid": {
+                  "summary": "Example file upload",
+                  "value": {
+                    "file": "(binary PDF file)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileUploadResponse" },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "message": "File uploaded successfully",
+                      "path": "user123/account/bank/1697238123-xyz456-file.pdf",
+                      "signedUrl": "https://signed.url.example.com/file.pdf"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or file error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "noFile": { "value": { "message": "No file provided" } },
+                  "invalidType": {
+                    "value": { "message": "Only PDF files are allowed" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/JWTUnauthorized"
+          },
+          "406": {
+            "description": "Invalid content type",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalidContentType": {
+                    "value": { "message": "Invalid content type" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+
+    "/user/notifications/all": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List notifications for the authenticated user",
+        "operationId": "getNotifications",
+        "responses": {
+          "200": {
+            "description": "Notifications (newest first)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "notFound": { "value": { "error": "User not found" } }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+
+    "/user/notifications/add": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Create a notification for the authenticated user",
+        "operationId": "addNotification",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NotificationPayload" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Notification created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericMessageResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": { "message": "Notification added successfully" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "notFound": { "value": { "error": "User not found" } }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+
+    "/user/notifications/mark-read/{id}": {
+      "put": {
+        "tags": ["Notifications"],
+        "summary": "Mark a notification as read",
+        "operationId": "markNotificationAsRead",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Marked as read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericMessageResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": { "message": "Notification marked as read" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "Notification not found or not owned by user",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nf": { "value": { "error": "Notification not found" } }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+
+    "/user/notifications/delete": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Bulk delete notifications by notificationId",
+        "operationId": "deleteNotifications",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteNotificationsRequest"
+              },
+              "examples": {
+                "default": {
+                  "value": { "notificationIds": ["notif-1", "notif-2"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deletion result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteNotificationsResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "message": "Notifications deleted successfully",
+                      "deletedCount": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": "notificationIds must be a non-empty array"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "No notifications found for user with given ids",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "nf": {
+                    "value": {
+                      "error": "No notifications found for this user with the provided ids"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+
+    "/user/faqs/complaints": {
+      "get": {
+        "tags": ["Support & FAQs"],
+        "summary": "List complaint FAQs",
+        "operationId": "getFaqs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "FAQ list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FaqListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/user/support": {
+      "put": {
+        "tags": ["Support & FAQs"],
+        "summary": "Record a support request for a complaint",
+        "operationId": "recordSupport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "complaint_id",
+            "required": true,
+            "schema": { "type": "number" },
+            "description": "Complaint ID to associate"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Support recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericMessageResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "message": "Support request recorded successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "User or Complaint not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "user": { "value": { "error": "User not found" } },
+                  "complaint": { "value": { "error": "Complaint not found" } }
+                }
+              }
+            }
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/payments/create-order": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Create a Razorpay order for an application",
+        "operationId": "createOrder",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateOrderRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "application_id": "5c3ed8b2-9a0e-4c2e-8f81-8b0b1e8e0d77"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrderResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "success": true,
+                      "message": "Order created successfully",
+                      "order": {
+                        "id": "ord_123",
+                        "provider_order_id": "order_RP_ABC123",
+                        "amount": 500000,
+                        "currency": "INR",
+                        "status": "Created"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or application not payable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "Application not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Order creation failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/payments/verify-payment": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Verify a captured Razorpay payment and mark order/application paid",
+        "operationId": "verifyPayment",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyPaymentRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "razorpay_payment_id": "pay_29QQoUBi66xm2f",
+                    "razorpay_order_id": "order_DBJOWzybf0sJbb",
+                    "razorpay_signature": "generated_signature_here"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": { "success": true, "message": "Payment verified" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid payload / signature mismatch / not captured / amount mismatch",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "Order not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Verification failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/payments/update-payment-failure": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Record a failed payment attempt for an order",
+        "operationId": "updatePaymentFailure",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePaymentFailureRequest"
+              },
+              "examples": {
+                "default": {
+                  "value": {
+                    "order_id": "ord_123",
+                    "provider_order_id": "order_DBJOWzybf0sJbb",
+                    "provider_payment_id": "pay_29QQoUBi66xm2f",
+                    "reason": "Payment failed due to insufficient funds"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Failure recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "success": true,
+                      "message": "Payment failure recorded"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid order details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "Order not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Recording failure failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/payments/cancel-order": {
+      "post": {
+        "tags": ["Payments"],
+        "summary": "Cancel an order if not completed",
+        "operationId": "cancelOrder",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CancelOrderRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "order_id": "ord_123",
+                    "provider_order_id": "order_DBJOWzybf0sJbb"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order canceled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "success": true,
+                      "message": "Order canceled successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid order details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "404": {
+            "description": "Order not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Cancellation failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/tickets": {
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Open a new support ticket (student only)",
+        "operationId": "openTicket",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OpenTicketRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "subject": "Issue with payment processing",
+                    "priority": "High"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ticket created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OpenTicketResponse" },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "message": "Ticket created successfully",
+                      "ticket": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "subject": "Issue with payment processing",
+                        "priority": "High",
+                        "status": "Open",
+                        "created_at": "2025-01-15T10:30:00.000Z",
+                        "raised_by": 123
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Subject is required or validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "missingSubject": {
+                    "value": { "error": "Subject is required" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Only students can open tickets",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "forbidden": {
+                    "value": { "error": "Only students can open tickets" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "List tickets with filtering and pagination",
+        "operationId": "listTickets",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": ["Open", "Closed"]
+            },
+            "required": false,
+            "description": "Filter by ticket status"
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "schema": {
+              "type": "string",
+              "enum": ["Low", "Medium", "High"]
+            },
+            "required": false,
+            "description": "Filter by ticket priority"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": { "type": "string" },
+            "required": false,
+            "description": "Page number (default: 1)"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": { "type": "string" },
+            "required": false,
+            "description": "Items per page (default: 20)"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": { "type": "string" },
+            "required": false,
+            "description": "Search in subject, user name, email, or mobile"
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "schema": { "type": "string", "format": "date" },
+            "required": false,
+            "description": "Start date for filtering (YYYY-MM-DD)"
+          },
+          {
+            "in": "query",
+            "name": "endDate",
+            "schema": { "type": "string", "format": "date" },
+            "required": false,
+            "description": "End date for filtering (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tickets with pagination",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TicketListResponse" },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "tickets": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440000",
+                          "subject": "Payment issue",
+                          "priority": "High",
+                          "status": "Open",
+                          "created_at": "2025-01-15T10:30:00.000Z",
+                          "updated_at": "2025-01-15T11:00:00.000Z",
+                          "closed_at": null,
+                          "raised_by": 123,
+                          "user": {
+                            "ref_id": "user_123",
+                            "first_name": "John",
+                            "last_name": "Doe",
+                            "email": "john@example.com",
+                            "mobile": "9876543210"
+                          },
+                          "_count": { "comments": 5 },
+                          "latestMessage": {
+                            "id": "msg_123",
+                            "message": "We are looking into this",
+                            "author_type": "admin",
+                            "created_at": "2025-01-15T11:00:00.000Z"
+                          }
+                        }
+                      ],
+                      "pagination": {
+                        "page": 1,
+                        "limit": 20,
+                        "total": 50,
+                        "totalPages": 3
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}": {
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "Get single ticket details",
+        "operationId": "getTicket",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Ticket ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GetTicketResponse" },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "ticket": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "subject": "Payment issue",
+                        "priority": "High",
+                        "status": "Open",
+                        "created_at": "2025-01-15T10:30:00.000Z",
+                        "updated_at": "2025-01-15T11:00:00.000Z",
+                        "closed_at": null,
+                        "raised_by": 123,
+                        "user": {
+                          "ref_id": "user_123",
+                          "first_name": "John",
+                          "last_name": "Doe",
+                          "email": "john@example.com",
+                          "mobile": "9876543210"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "notFound": { "value": { "error": "Ticket not found" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/close": {
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Close a ticket",
+        "operationId": "closeTicket",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Ticket ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket closed successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CloseTicketResponse" },
+                "examples": {
+                  "closed": {
+                    "value": {
+                      "message": "Ticket closed successfully",
+                      "ticket": {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "subject": "Payment issue",
+                        "priority": "High",
+                        "status": "Closed",
+                        "closed_at": "2025-01-15T12:00:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ticket is already closed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "alreadyClosed": {
+                    "value": { "error": "Ticket is already closed" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/messages": {
+      "post": {
+        "tags": ["Tickets"],
+        "summary": "Send a message to a ticket",
+        "operationId": "sendMessage",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Ticket ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendMessageRequest" },
+              "examples": {
+                "default": {
+                  "value": {
+                    "message": "I need help with my payment issue"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendMessageResponse" },
+                "examples": {
+                  "sent": {
+                    "value": {
+                      "message": "Message sent successfully",
+                      "comment": {
+                        "id": "comment_123",
+                        "ticket_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "author_type": "user",
+                        "author_id": "user_123",
+                        "message": "I need help with my payment issue",
+                        "created_at": "2025-01-15T10:35:00.000Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Message is required or ticket is closed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "missingMessage": {
+                    "value": { "error": "Message is required" }
+                  },
+                  "closedTicket": {
+                    "value": {
+                      "error": "Cannot send message to closed ticket"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "Get all messages for a ticket",
+        "operationId": "getTicketMessages",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Ticket ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of messages for the ticket",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageListResponse" },
+                "examples": {
+                  "ok": {
+                    "value": {
+                      "messages": [
+                        {
+                          "id": "comment_123",
+                          "author_type": "user",
+                          "author_id": "user_123",
+                          "message": "I need help with my payment issue",
+                          "created_at": "2025-01-15T10:35:00.000Z"
+                        },
+                        {
+                          "id": "comment_124",
+                          "author_type": "admin",
+                          "author_id": "admin_456",
+                          "message": "We are looking into this",
+                          "created_at": "2025-01-15T11:00:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/messages/latest": {
+      "get": {
+        "tags": ["Tickets"],
+        "summary": "Get the latest message for a ticket",
+        "operationId": "getLatestMessage",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Ticket ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest message or null if no messages",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LatestMessageResponse" },
+                "examples": {
+                  "withMessage": {
+                    "value": {
+                      "message": {
+                        "id": "comment_124",
+                        "author_type": "admin",
+                        "author_id": "admin_456",
+                        "message": "We are looking into this",
+                        "created_at": "2025-01-15T11:00:00.000Z"
+                      }
+                    }
+                  },
+                  "noMessage": {
+                    "value": { "message": null }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/JWTUnauthorized" },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Ticket not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Standard JWT bearer token (used on protected endpoints)."
+      }
+    },
+    "responses": {
+      "JWTUnauthorized": {
+        "description": "Missing, malformed, expired, or invalid JWT",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": { "type": "string" },
+            "description": "Auth challenge header (e.g., Bearer realm and error details)"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/JWTErrorResponse" },
+            "examples": {
+              "missingHeader": {
+                "value": {
+                  "error": "UNAUTHORIZED",
+                  "message": "Missing or malformed Authorization header",
+                  "statusCode": 401
+                }
+              },
+              "invalid": {
+                "value": {
+                  "error": "INVALID_TOKEN",
+                  "message": "JWT signature verification failed",
+                  "statusCode": 401
+                }
+              },
+              "expired": {
+                "value": {
+                  "error": "TOKEN_EXPIRED",
+                  "message": "JWT access token has expired",
+                  "statusCode": 401
+                }
+              }
+            }
+          }
+        }
+      },
+      "JWTForbidden": {
+        "description": "Authenticated but not allowed to access this resource",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/JWTErrorResponse" },
+            "examples": {
+              "forbidden": {
+                "value": {
+                  "error": "FORBIDDEN",
+                  "message": "Insufficient permissions",
+                  "statusCode": 403
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "ok" }
+        },
+        "required": ["status"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        },
+        "required": ["error"]
+      },
+      "TooManyRequestsResponse": {
+        "type": "object",
+        "properties": {
+          "statusCode": { "type": "integer", "example": 429 },
+          "error": { "type": "string", "example": "Too Many Requests" },
+          "message": {
+            "type": "string",
+            "example": "Rate limit exceeded, retry in 30 seconds"
+          }
+        }
+      },
+      "OtpSendRequest": {
+        "type": "object",
+        "properties": {
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" }
+        },
+        "required": ["mobile"]
+      },
+      "OtpSendResponse": {
+        "type": "object",
+        "properties": {
+          "verificationId": { "type": "string", "format": "uuid" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "message": { "type": "string", "enum": ["OTP_SENT"] }
+        },
+        "required": ["verificationId", "expiresAt", "message"]
+      },
+      "OtpVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" },
+          "otp": { "type": "string", "pattern": "^[0-9]{6}$" }
+        },
+        "required": ["mobile", "otp"]
+      },
+      "OtpVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "verificationId": { "type": "string", "format": "uuid" },
+          "verified": { "type": "boolean", "example": true },
+          "message": { "type": "string", "enum": ["OTP_VERIFIED"] },
+          "newUser": { "type": "boolean", "example": true }
+        },
+        "required": ["verificationId", "verified", "message", "newUser"]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "verificationId": { "type": "string", "format": "uuid" },
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" }
+        },
+        "required": ["verificationId", "mobile"]
+      },
+      "SignupRequest": {
+        "type": "object",
+        "properties": {
+          "verificationId": { "type": "string", "format": "uuid" },
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" },
+          "first_name": { "type": "string", "minLength": 1 },
+          "last_name": { "type": "string", "minLength": 1 },
+          "email": { "type": "string", "format": "email" },
+          "course_type_id": { "type": "integer" }
+        },
+        "required": [
+          "verificationId",
+          "mobile",
+          "first_name",
+          "last_name",
+          "email",
+          "course_type_id"
+        ]
+      },
+      "GetUserResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": { "type": "string", "format": "uuid" },
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" },
+          "email": { "type": "string", "format": "email", "nullable": true },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "gender": {
+            "type": "string",
+            "enum": ["Male", "Female", "Other"],
+            "nullable": true
+          },
+          "dob": { "type": "string", "format": "date", "nullable": true },
+          "prefered_theme": { "type": "string", "enum": ["Light", "Dark"] },
+          "allow_notifications": { "type": "boolean" }
+        },
+        "required": [
+          "user_id",
+          "mobile",
+          "email",
+          "first_name",
+          "last_name",
+          "prefered_theme",
+          "allow_notifications"
+        ]
+      },
+      "AuthTokensWithUser": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "JWT access token"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "JWT refresh token"
+          },
+          "user": { "$ref": "#/components/schemas/User" }
+        },
+        "required": ["accessToken", "refreshToken", "user"]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "example": "123" },
+          "mobile": { "type": "string", "example": "9876543210" },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          }
+        },
+        "required": ["id", "mobile", "email"]
+      },
+      "TokenRequest": {
+        "type": "object",
+        "properties": {
+          "refreshToken": { "type": "string" }
+        },
+        "required": ["refreshToken"]
+      },
+      "TokenResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" }
+        },
+        "required": ["accessToken"]
+      },
+      "JWTErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "UNAUTHORIZED",
+              "INVALID_TOKEN",
+              "TOKEN_EXPIRED",
+              "FORBIDDEN"
+            ],
+            "description": "JWT validation error type"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error details"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 401,
+            "description": "HTTP status code"
+          }
+        },
+        "required": ["error"]
+      },
+      "UpdateUserProfileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["first_name", "last_name", "email", "mobile"],
+        "properties": {
+          "first_name": { "type": "string", "minLength": 1 },
+          "last_name": { "type": "string", "minLength": 1 },
+          "email": { "type": "string", "format": "email" },
+          "mobile": { "type": "string", "pattern": "^[0-9]{10}$" },
+          "gender": {
+            "type": "string",
+            "enum": ["Male", "Female", "Others"],
+            "nullable": true,
+            "default": null
+          },
+          "dob": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "default": null,
+            "description": "YYYY-MM-DD"
+          }
+        }
+      },
+      "UpdateUserProfileResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Profile updated successfully"
+          }
+        },
+        "required": ["message"]
+      },
+      "CollegeListItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "area": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "logo_url": { "type": "string", "format": "uri", "nullable": true },
+          "is_applied": { "type": "boolean" }
+        },
+        "required": ["id", "name", "is_applied"]
+      },
+      "CollegeListResponse": {
+        "type": "array",
+        "items": { "$ref": "#/components/schemas/CollegeListItem" }
+      },
+      "EligibilityItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "criteria_type": { "type": "string" },
+          "criteria": { "type": "string" }
+        },
+        "required": ["id", "criteria_type", "criteria"]
+      },
+      "ScholarshipItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "schemes": { "type": "string" }
+        },
+        "required": ["id", "schemes"]
+      },
+      "CollegeDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "area": { "type": "string", "nullable": true },
+          "city": { "type": "string", "nullable": true },
+          "logo_url": { "type": "string", "format": "uri", "nullable": true },
+          "cover_url": { "type": "string", "format": "uri", "nullable": true },
+          "is_saved": { "type": "boolean" },
+          "is_applied": { "type": "boolean" },
+          "description": { "type": "string", "nullable": true },
+          "deadline": { "type": "string", "format": "date", "nullable": true },
+          "eligibility": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EligibilityItem" }
+          },
+          "scholarships": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ScholarshipItem" }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_saved",
+          "is_applied",
+          "eligibility",
+          "scholarships"
+        ]
+      },
+      "CategoryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" }
+        },
+        "required": ["id", "name"]
+      },
+      "CategoryListResponse": {
+        "type": "array",
+        "items": { "$ref": "#/components/schemas/CategoryItem" }
+      },
+      "SaveCollegeRequest": {
+        "type": "object",
+        "properties": {
+          "college_id": { "type": "string" }
+        },
+        "required": ["college_id"],
+        "additionalProperties": false
+      },
+      "SaveCollegeResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "saved": { "type": "boolean" }
+        },
+        "required": ["message", "saved"]
+      },
+      "AppliedCollegeItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "ready_to_pay": { "type": "boolean" },
+          "documents_verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "paid": { "type": "boolean" },
+          "is_active": { "type": "boolean" },
+          "amount": { "type": "number", "nullable": true },
+          "application_status_id": { "type": "number" },
+          "status": { "type": "string" },
+          "hsc_path": { "type": "string", "nullable": true },
+          "hsc_signed_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "sslc_path": { "type": "string", "nullable": true },
+          "sslc_signed_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "college": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "area": { "type": "string", "nullable": true },
+              "city": { "type": "string", "nullable": true },
+              "logo_url": {
+                "type": "string",
+                "format": "uri",
+                "nullable": true
+              }
+            },
+            "required": ["id", "name"]
+          }
+        },
+        "required": ["id", "status", "is_active", "paid", "college"]
+      },
+      "AppliedCollegeListResponse": {
+        "type": "array",
+        "items": { "$ref": "#/components/schemas/AppliedCollegeItem" }
+      },
+      "ApplyCollegeRequest": {
+        "type": "object",
+        "properties": {
+          "college_id": { "type": "string", "format": "uuid" },
+          "hsc_path": { "type": "string" },
+          "sslc_path": { "type": "string" }
+        },
+        "required": ["college_id", "sslc_path"]
+      },
+      "ApplyCollegeResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "applicationId": { "type": "string" }
+        },
+        "required": ["message", "applicationId"]
+      },
+      "FileUploadResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "path": { "type": "string" },
+          "signedUrl": { "type": "string", "format": "uri" }
+        },
+        "required": ["message", "path", "signedUrl"]
+      },
+      "AfterPaymentFile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "sub_title": { "type": "string", "nullable": true },
+          "file_path": { "type": "string" },
+          "signed_url": { "type": "string", "format": "uri", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "title", "file_path", "created_at", "updated_at"]
+      },
+      "AfterPaymentNote": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "description": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "description", "created_at", "updated_at"]
+      },
+      "AfterPaymentNotesResponse": {
+        "type": "object",
+        "properties": {
+          "notes": { "$ref": "#/components/schemas/AfterPaymentNote", "nullable": true },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AfterPaymentFile" }
+          }
+        },
+        "required": ["files"]
+      },
+
+      "NotificationPayload": {
+        "type": "object",
+        "required": ["title", "subtitle", "notificationId"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "subtitle": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "notificationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "imageUrl": {
+            "type": ["string", "null"],
+            "maxLength": 1000,
+            "nullable": true
+          },
+          "navigationUrl": {
+            "type": ["string", "null"],
+            "maxLength": 1000,
+            "nullable": true
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["high","normal"],
+            "default": "normal",
+            "nullable": true
+          }
+        }
+      },
+
+      "NotificationItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "subtitle": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "is_read": { "type": "boolean" },
+          "imageUrl": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "nullable": true
+          },
+          "navigationUrl": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "nullable": true
+          },
+          "priority": {
+            "type": ["string", "null"],
+            "enum": ["high","normal"],
+            "nullable": true
+          },
+          "notificationId": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "title",
+          "subtitle",
+          "created_at",
+          "is_read",
+          "notificationId"
+        ]
+      },
+
+      "NotificationListResponse": {
+        "type": "array",
+        "items": { "$ref": "#/components/schemas/NotificationItem" }
+      },
+
+      "GenericMessageResponse": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } },
+        "required": ["message"]
+      },
+
+      "DeleteNotificationsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["notificationIds"],
+        "properties": {
+          "notificationIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
+        }
+      },
+
+      "DeleteNotificationsResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Notifications deleted successfully"
+          },
+          "deletedCount": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["message", "deletedCount"]
+      },
+
+      "FaqItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "question": { "type": "string" },
+          "answer": { "type": "string" }
+        },
+        "required": ["id", "question", "answer"]
+      },
+
+      "FaqListResponse": {
+        "type": "array",
+        "items": { "$ref": "#/components/schemas/FaqItem" }
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "required": ["application_id"],
+        "properties": {
+          "application_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "applied_colleges.ref_id"
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "CreateOrderResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "order": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Internal order ID (UUID)"
+              },
+              "provider_order_id": {
+                "type": "string",
+                "description": "Razorpay order id"
+              },
+              "amount": {
+                "type": "integer",
+                "description": "Amount in paisa (Razorpay minor units)",
+                "example": 500000
+              },
+              "currency": { "type": "string", "example": "INR" },
+              "status": { "type": "string", "example": "Created" }
+            },
+            "required": [
+              "id",
+              "provider_order_id",
+              "amount",
+              "currency",
+              "status"
+            ]
+          }
+        },
+        "required": ["success", "message", "order"]
+      },
+
+      "VerifyPaymentRequest": {
+        "type": "object",
+        "required": [
+          "razorpay_payment_id",
+          "razorpay_order_id",
+          "razorpay_signature"
+        ],
+        "properties": {
+          "razorpay_payment_id": { "type": "string" },
+          "razorpay_order_id": {
+            "type": "string",
+            "description": "Must match orders.provider_order_id"
+          },
+          "razorpay_signature": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+
+      "UpdatePaymentFailureRequest": {
+        "type": "object",
+        "required": ["order_id", "provider_order_id", "provider_payment_id"],
+        "properties": {
+          "order_id": { "type": "string", "description": "orders.id (UUID)" },
+          "provider_order_id": {
+            "type": "string",
+            "description": "Razorpay order id"
+          },
+          "provider_payment_id": {
+            "type": "string",
+            "description": "Razorpay payment id"
+          },
+          "reason": { "type": "string", "nullable": true }
+        },
+        "additionalProperties": false
+      },
+
+      "CancelOrderRequest": {
+        "type": "object",
+        "required": ["order_id", "provider_order_id"],
+        "properties": {
+          "order_id": { "type": "string", "description": "orders.id (UUID)" },
+          "provider_order_id": {
+            "type": "string",
+            "description": "Razorpay order id"
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "GenericSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string" }
+        },
+        "required": ["success", "message"]
+      },
+
+      "OpenTicketRequest": {
+        "type": "object",
+        "required": ["subject"],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Ticket subject/title"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["Low", "Medium", "High"],
+            "default": "Medium",
+            "description": "Ticket priority level"
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "TicketBasic": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "subject": { "type": "string" },
+          "priority": {
+            "type": "string",
+            "enum": ["Low", "Medium", "High"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Open", "Closed"]
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "raised_by": { "type": "integer" }
+        },
+        "required": ["id", "subject", "priority", "status", "created_at", "raised_by"]
+      },
+
+      "OpenTicketResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "ticket": { "$ref": "#/components/schemas/TicketBasic" }
+        },
+        "required": ["message", "ticket"]
+      },
+
+      "TicketUser": {
+        "type": "object",
+        "properties": {
+          "ref_id": { "type": "string" },
+          "first_name": { "type": "string" },
+          "last_name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "mobile": { "type": "string" }
+        },
+        "required": ["ref_id", "first_name", "last_name", "email", "mobile"]
+      },
+
+      "TicketMessage": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "author_type": {
+            "type": "string",
+            "enum": ["user", "admin", "super_admin"]
+          },
+          "author_id": { "type": "string" },
+          "message": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "author_type", "author_id", "message", "created_at"]
+      },
+
+      "TicketListItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "subject": { "type": "string" },
+          "priority": {
+            "type": "string",
+            "enum": ["Low", "Medium", "High"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Open", "Closed"]
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "raised_by": { "type": "integer" },
+          "user": { "$ref": "#/components/schemas/TicketUser" },
+          "_count": {
+            "type": "object",
+            "properties": {
+              "comments": { "type": "integer" }
+            },
+            "required": ["comments"]
+          },
+          "latestMessage": {
+            "$ref": "#/components/schemas/TicketMessage",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "priority",
+          "status",
+          "created_at",
+          "raised_by",
+          "user",
+          "_count"
+        ]
+      },
+
+      "TicketListResponse": {
+        "type": "object",
+        "properties": {
+          "tickets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TicketListItem" }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": { "type": "integer" },
+              "limit": { "type": "integer" },
+              "total": { "type": "integer" },
+              "totalPages": { "type": "integer" }
+            },
+            "required": ["page", "limit", "total", "totalPages"]
+          }
+        },
+        "required": ["tickets", "pagination"]
+      },
+
+      "TicketDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "subject": { "type": "string" },
+          "priority": {
+            "type": "string",
+            "enum": ["Low", "Medium", "High"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["Open", "Closed"]
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "raised_by": { "type": "integer" },
+          "user": { "$ref": "#/components/schemas/TicketUser" }
+        },
+        "required": [
+          "id",
+          "subject",
+          "priority",
+          "status",
+          "created_at",
+          "raised_by",
+          "user"
+        ]
+      },
+
+      "GetTicketResponse": {
+        "type": "object",
+        "properties": {
+          "ticket": { "$ref": "#/components/schemas/TicketDetail" }
+        },
+        "required": ["ticket"]
+      },
+
+      "CloseTicketResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "ticket": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "subject": { "type": "string" },
+              "priority": {
+                "type": "string",
+                "enum": ["Low", "Medium", "High"]
+              },
+              "status": {
+                "type": "string",
+                "enum": ["Closed"]
+              },
+              "closed_at": { "type": "string", "format": "date-time" }
+            },
+            "required": ["id", "subject", "priority", "status", "closed_at"]
+          }
+        },
+        "required": ["message", "ticket"]
+      },
+
+      "SendMessageRequest": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message content"
+          }
+        },
+        "additionalProperties": false
+      },
+
+      "TicketComment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ticket_id": { "type": "string", "format": "uuid" },
+          "author_type": {
+            "type": "string",
+            "enum": ["user", "admin", "super_admin"]
+          },
+          "author_id": { "type": "string" },
+          "message": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "ticket_id",
+          "author_type",
+          "author_id",
+          "message",
+          "created_at"
+        ]
+      },
+
+      "SendMessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "comment": { "$ref": "#/components/schemas/TicketComment" }
+        },
+        "required": ["message", "comment"]
+      },
+
+      "MessageListResponse": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TicketMessage" }
+          }
+        },
+        "required": ["messages"]
+      },
+
+      "LatestMessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/TicketMessage",
+            "nullable": true
+          }
+        },
+        "required": ["message"]
+      }
+    }
+  }
+}
