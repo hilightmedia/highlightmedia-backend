@@ -37,22 +37,24 @@ export default async function mediaRoutes(app: FastifyInstance) {
     createFolder,
   );
 
-  app.post(
-    "/:folderId/upload-media",
-    {
-      schema: {
-        params: {
-          type: "object",
-          required: ["folderId"],
-          properties: {
-            folderId: { type: "number" },
-          },
+app.post(
+  "/:folderId/upload-media",
+  {
+    schema: {
+      params: {
+        type: "object",
+        required: ["folderId"],
+        properties: {
+          folderId: { type: "number" },
         },
       },
-      preHandler: [authGuard],
+      consumes: ["multipart/form-data"],
     },
-    uploadMedia,
-  );
+    preHandler: [authGuard],
+  },
+  uploadMedia,
+);
+
 
   app.get(
     "/:folderId/media",

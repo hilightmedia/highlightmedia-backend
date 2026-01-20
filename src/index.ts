@@ -52,7 +52,7 @@ await fastify.register(cors);
 // multipart for file uploads
 fastify.register(multipart, {
   limits: {
-    files: 10, // max 10 files
+    files: 1, 
     fileSize: (Number(env.MAX_FILE_MB || 100) * 1024 * 1024),
   },
 });

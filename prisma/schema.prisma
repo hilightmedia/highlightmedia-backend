@@ -44,6 +44,7 @@ model File {
   fileType  String    @db.VarChar(30)
   fileKey   String    @unique @db.VarChar(1000)
   fileSize  String
+  duration  String    @default("0") @db.VarChar(30)
   isDeleted Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -119,13 +120,14 @@ model Player {
 }
 
 model PlayerSession {
-  id        Int       @id @default(autoincrement())
-  playerId  Int
-  startedAt DateTime
-  endedAt   DateTime?
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           Int       @id @default(autoincrement())
+  playerId     Int
+  startedAt    DateTime
+  endedAt      DateTime?
+  lastActiveAt DateTime  @default(now())
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   player Player @relation(fields: [playerId], references: [id], onDelete: Restrict)
 
@@ -135,7 +137,7 @@ model PlayerSession {
 
 model PlayLog {
   id             Int      @id @default(autoincrement())
-  playerId       Int
+  playerId       Int?
   playlistFileId Int?
   fileId         Int
   playlistId     Int?
@@ -143,7 +145,7 @@ model PlayLog {
   isSubPlaylist  Boolean  @default(false)
   createdAt      DateTime @default(now())
 
-  player       Player        @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  player       Player?       @relation(fields: [playerId], references: [id], onDelete: SetNull) // ✅ make optional
   playlistFile PlaylistFile? @relation(fields: [playlistFileId], references: [id], onDelete: SetNull)
   file         File          @relation(fields: [fileId], references: [id], onDelete: Cascade)
   playlist     Playlist?     @relation("PlayLogPlaylist", fields: [playlistId], references: [id], onDelete: SetNull)

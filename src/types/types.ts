@@ -30,6 +30,7 @@ export type PlayerRow = {
   id: number;
   name: string;
   playlist: string | null;
+  playlistId: number | null;
   sessionStart: Date | null;
   sessionEnd: Date | null;
   status: "Online" | "Offline";
@@ -38,6 +39,10 @@ export type PlayerRow = {
   linked: boolean;
   location: string;
 };
+
+
+export type PlayerSortBy = "status" | "lastActive" | "duration" | "name";
+export type PlayerStatusFilter = "Online" | "Offline";
 
 
 export type BulkAddFileItem = { fileId: number; duration: number };

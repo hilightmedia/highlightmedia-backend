@@ -29,15 +29,23 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
     const parsedSortOrder: "asc" | "desc" = sortOrder;
 
     const searchTerm =
-      typeof search === "string" && search.trim().length > 0 ? search.trim() : null;
+      typeof search === "string" && search.trim().length > 0
+        ? search.trim()
+        : null;
 
     const fromDate = parseDateMaybe(lastModifiedFrom);
     const toDate = parseDateMaybe(lastModifiedTo);
 
     const db: DurationBucket | undefined = durationBucket;
 
-    const durFrom = durationFrom !== undefined && durationFrom !== null ? Number(durationFrom) : null;
-    const durTo = durationTo !== undefined && durationTo !== null ? Number(durationTo) : null;
+    const durFrom =
+      durationFrom !== undefined && durationFrom !== null
+        ? Number(durationFrom)
+        : null;
+    const durTo =
+      durationTo !== undefined && durationTo !== null
+        ? Number(durationTo)
+        : null;
 
     const playlists = await prisma.playlist.findMany({
       where: searchTerm
@@ -49,7 +57,9 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
         name: true,
         updatedAt: true,
         playlistFiles: {
-          where: { OR: [{ fileId: { not: null } }, { subPlaylistId: { not: null } }] },
+          where: {
+            OR: [{ fileId: { not: null } }, { subPlaylistId: { not: null } }],
+          },
           orderBy: { playOrder: "asc" },
           select: {
             id: true,
@@ -64,6 +74,7 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
                 updatedAt: true,
                 isDeleted: true,
               },
+              where: { isDeleted: false },
             },
           },
         },
@@ -74,8 +85,8 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
       new Set(
         playlists
           .flatMap((p) => p.playlistFiles.map((pf) => pf.subPlaylistId))
-          .filter((x): x is number => typeof x === "number")
-      )
+          .filter((x): x is number => typeof x === "number"),
+      ),
     );
 
     const subPlaylistBytes = new Map<number, number>();
@@ -108,7 +119,9 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
         let thumbnail: string | null = null;
         let totalBytes = 0;
 
-        const visibleItems = p.playlistFiles.filter((it: any) => !it.file?.isDeleted);
+        const visibleItems = p.playlistFiles.filter(
+          (it: any) => !it.file?.isDeleted,
+        );
 
         for (const item of visibleItems as any[]) {
           const d = Number(item.duration ?? 0);
@@ -117,7 +130,8 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
           lastModifiedMs = Math.max(lastModifiedMs, item.updatedAt.getTime());
 
           const f = item.file;
-          if (f?.updatedAt) lastModifiedMs = Math.max(lastModifiedMs, f.updatedAt.getTime());
+          if (f?.updatedAt)
+            lastModifiedMs = Math.max(lastModifiedMs, f.updatedAt.getTime());
 
           if (f?.fileSize) totalBytes += Number(f.fileSize) || 0;
 
@@ -125,12 +139,16 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
             totalBytes += subPlaylistBytes.get(item.subPlaylistId) ?? 0;
           }
 
-          if (!thumbnail && f?.fileType?.split("/")[0] === "image" && f?.fileKey) {
+          if (
+            !thumbnail &&
+            f?.fileType?.split("/")[0] === "image" &&
+            f?.fileKey
+          ) {
             thumbnail = await generateSignedUrl(f.fileKey);
           }
         }
 
-        const playlistSizeMb = Number((totalBytes / (1024 * 1024)).toFixed(2));
+        const playlistSizeMb = String(totalBytes);
 
         return {
           id: p.id,
@@ -141,11 +159,15 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
           playlistSize: playlistSizeMb,
           lastModified: new Date(lastModifiedMs),
         };
-      })
+      }),
     );
 
-    if (fromDate) cards = cards.filter((x) => x.lastModified.getTime() >= fromDate.getTime());
-    if (toDate) cards = cards.filter((x) => x.lastModified.getTime() <= toDate.getTime());
+    if (fromDate)
+      cards = cards.filter(
+        (x) => x.lastModified.getTime() >= fromDate.getTime(),
+      );
+    if (toDate)
+      cards = cards.filter((x) => x.lastModified.getTime() <= toDate.getTime());
 
     if (db) {
       cards = cards.filter((x) => {
@@ -167,11 +189,19 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
     cards.sort((a, b) => {
       switch (parsedSortBy) {
         case "name":
-          return compare(a.name.toLowerCase(), b.name.toLowerCase(), parsedSortOrder);
+          return compare(
+            a.name.toLowerCase(),
+            b.name.toLowerCase(),
+            parsedSortOrder,
+          );
         case "items":
           return compare(a.totalItems, b.totalItems, parsedSortOrder);
         case "lastModified":
-          return compare(a.lastModified.getTime(), b.lastModified.getTime(), parsedSortOrder);
+          return compare(
+            a.lastModified.getTime(),
+            b.lastModified.getTime(),
+            parsedSortOrder,
+          );
         case "duration":
           return compare(a.durationSec, b.durationSec, parsedSortOrder);
         default:
@@ -202,7 +232,10 @@ export const getPlayList = async (req: FastifyRequest, reply: FastifyReply) => {
   }
 };
 
-export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) => {
+export const getPlaylistById = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
     const { playlistId } = req.params as { playlistId: number };
     const id = Number(playlistId);
@@ -228,13 +261,16 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
     const toDate = parseDateMaybe(lastModifiedTo);
 
     const searchTerm =
-      typeof search === "string" && search.trim().length > 0 ? search.trim() : null;
+      typeof search === "string" && search.trim().length > 0
+        ? search.trim()
+        : null;
 
     const playlist = await prisma.playlist.findUnique({
       where: { id },
       select: {
         id: true,
         name: true,
+        defaultDuration: true,
         updatedAt: true,
         playlistFiles: {
           where: {
@@ -272,17 +308,21 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
       },
     });
 
-    if (!playlist) return reply.status(404).send({ message: "Playlist not found" });
+    if (!playlist)
+      return reply.status(404).send({ message: "Playlist not found" });
 
     const subIds = Array.from(
       new Set(
         playlist.playlistFiles
           .map((pf: any) => pf.subPlaylistId)
-          .filter((x: any): x is number => typeof x === "number")
-      )
+          .filter((x: any): x is number => typeof x === "number"),
+      ),
     );
 
-    const subAgg = new Map<number, { fileIds: number[]; length: number; sizeBytes: number }>();
+    const subAgg = new Map<
+      number,
+      { fileIds: number[]; length: number; sizeBytes: number }
+    >();
 
     if (subIds.length > 0) {
       const subs = await prisma.playlist.findMany({
@@ -290,7 +330,9 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
         select: {
           id: true,
           playlistFiles: {
-            where: { OR: [{ fileId: { not: null } }, { subPlaylistId: { not: null } }] },
+            where: {
+              OR: [{ fileId: { not: null } }, { subPlaylistId: { not: null } }],
+            },
             select: {
               fileId: true,
               file: { select: { fileSize: true, isDeleted: true } },
@@ -321,7 +363,10 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
       .filter((x: any): x is number => typeof x === "number");
 
     const allFileIds = Array.from(
-      new Set([...directFileIds, ...Array.from(subAgg.values()).flatMap((x: any) => x.fileIds)])
+      new Set([
+        ...directFileIds,
+        ...Array.from(subAgg.values()).flatMap((x: any) => x.fileIds),
+      ]),
     );
 
     const fileLogCount = new Map<number, number>();
@@ -342,10 +387,12 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
         if (pf.fileId && pf.file && !pf.file.isDeleted) {
           const url = await generateSignedUrl(pf.file.fileKey);
           const sizeBytes = Number(pf.file.fileSize ?? 0) || 0;
-          const sizeMb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
           const logsCount = fileLogCount.get(pf.fileId) ?? 0;
 
-          const lastModifiedMs = Math.max(pf.updatedAt.getTime(), pf.file.updatedAt.getTime());
+          const lastModifiedMs = Math.max(
+            pf.updatedAt.getTime(),
+            pf.file.updatedAt.getTime(),
+          );
 
           return {
             playlistFileId: pf.id,
@@ -356,25 +403,31 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
             type: pf.file.fileType,
             duration: durationSec,
             playOrder: pf.playOrder,
-            size: sizeMb,
+            size: sizeBytes,
             logsCount,
             lastModified: new Date(lastModifiedMs),
           };
         }
 
         if (pf.subPlaylistId && pf.subPlaylist) {
-          const agg = subAgg.get(pf.subPlaylistId) ?? { fileIds: [], length: 0, sizeBytes: 0 };
-          const sizeMb = Number((agg.sizeBytes / (1024 * 1024)).toFixed(2));
+          const agg = subAgg.get(pf.subPlaylistId) ?? {
+            fileIds: [],
+            length: 0,
+            sizeBytes: 0,
+          };
 
           const totalSubLogs = agg.fileIds.reduce(
             (sum, fid) => sum + (fileLogCount.get(fid) ?? 0),
-            0
+            0,
           );
 
           const denom = Math.max(agg.length, 1);
           const logsCount = Math.ceil(totalSubLogs / denom);
 
-          const lastModifiedMs = Math.max(pf.updatedAt.getTime(), pf.subPlaylist.updatedAt.getTime());
+          const lastModifiedMs = Math.max(
+            pf.updatedAt.getTime(),
+            pf.subPlaylist.updatedAt.getTime(),
+          );
 
           return {
             playlistFileId: pf.id,
@@ -385,29 +438,35 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
             url: null,
             type: "subPlaylist",
             duration: durationSec,
-            size: sizeMb,
+            size: agg.sizeBytes,
             logsCount,
             lastModified: new Date(lastModifiedMs),
           };
         }
 
         return null;
-      })
+      }),
     );
 
     let result = itemsRaw.filter(Boolean) as any[];
 
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
-      result = result.filter((x: any) => String(x.name ?? "").toLowerCase().includes(s));
+      result = result.filter((x: any) =>
+        String(x.name ?? "")
+          .toLowerCase()
+          .includes(s),
+      );
     }
 
     const sb: SizeBucket | undefined = sizeBucket;
     if (sb) {
       result = result.filter((x: any) => {
-        if (sb === "0-10") return x.size >= 0 && x.size < 10;
-        if (sb === "10-100") return x.size >= 10 && x.size < 100;
-        if (sb === "100+") return x.size >= 100;
+        const bytes = Number(x.size ?? 0) || 0;
+        const mb = bytes / (1024 * 1024);
+        if (sb === "0-10") return mb >= 0 && mb < 10;
+        if (sb === "10-100") return mb >= 10 && mb < 100;
+        if (sb === "100+") return mb >= 100;
         return true;
       });
     }
@@ -422,8 +481,14 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
       });
     }
 
-    if (fromDate) result = result.filter((x: any) => x.lastModified.getTime() >= fromDate.getTime());
-    if (toDate) result = result.filter((x: any) => x.lastModified.getTime() <= toDate.getTime());
+    if (fromDate)
+      result = result.filter(
+        (x: any) => x.lastModified.getTime() >= fromDate.getTime(),
+      );
+    if (toDate)
+      result = result.filter(
+        (x: any) => x.lastModified.getTime() <= toDate.getTime(),
+      );
 
     const db: DurationBucket | undefined = durationBucket;
     if (db) {
@@ -441,11 +506,23 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
         case "playOrder":
           return compare(a.playOrder, b.playOrder, parsedSortOrder);
         case "name":
-          return compare(a.name.toLowerCase(), b.name.toLowerCase(), parsedSortOrder);
+          return compare(
+            a.name.toLowerCase(),
+            b.name.toLowerCase(),
+            parsedSortOrder,
+          );
         case "type":
-          return compare(String(a.type).toLowerCase(), String(b.type).toLowerCase(), parsedSortOrder);
+          return compare(
+            String(a.type).toLowerCase(),
+            String(b.type).toLowerCase(),
+            parsedSortOrder,
+          );
         case "lastModified":
-          return compare(a.lastModified.getTime(), b.lastModified.getTime(), parsedSortOrder);
+          return compare(
+            a.lastModified.getTime(),
+            b.lastModified.getTime(),
+            parsedSortOrder,
+          );
         case "size":
           return compare(a.size, b.size, parsedSortOrder);
         case "duration":
@@ -461,6 +538,7 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
         id: playlist.id,
         name: playlist.name,
         updatedAt: playlist.updatedAt,
+        defaultDuration: playlist.defaultDuration,
         items: result,
       },
       meta: {
@@ -483,31 +561,37 @@ export const getPlaylistById = async (req: FastifyRequest, reply: FastifyReply) 
   }
 };
 
+export const getPlaylistOnly = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const playlist = await prisma.playlist.findMany({
+      select: {
+        id: true,
+        name: true,
+      },
+    });
 
-export const getPlaylistOnly = async (req: FastifyRequest, reply: FastifyReply) => {
-  try{
-   const playlist = await prisma.playlist.findMany({
-    select:{
-      id: true,
-      name: true,
-    }
-   })
-
-   return reply.status(200).send({message: "Playlist fetched successfully", playlist});
-  }
-  catch(e){
+    return reply
+      .status(200)
+      .send({ message: "Playlist fetched successfully", playlist });
+  } catch (e) {
     console.log("Get playlist only error: ", e);
     const { status, payload } = toHttpError(e);
     return reply.status(status).send(payload);
   }
-}
+};
 
 export const createPlaylist = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
-    const { name,duration = 30 } = req.body as { name: string, duration?: number };
+    const { name, duration = 30 } = req.body as {
+      name: string;
+      duration?: number;
+    };
 
     const playlist = await prisma.playlist.create({
       data: { name, defaultDuration: duration },
@@ -523,48 +607,43 @@ export const createPlaylist = async (
   }
 };
 
-export const editPlaylist = async (req: FastifyRequest, reply: FastifyReply) => {
+export const editPlaylist = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
     const { playlistId } = req.params as { playlistId: number };
-    const { name, duration } = req.body as { name: string; duration?: number };
+    const { name, defaultDuration } = req.body as {
+      name: string;
+      defaultDuration?: number;
+    };
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: playlistId },
       select: { id: true, defaultDuration: true },
     });
-    if (!playlist) return reply.status(404).send({ message: "Playlist not found" });
+    if (!playlist)
+      return reply.status(404).send({ message: "Playlist not found" });
 
-    if (playlist.defaultDuration != duration) {
-      await prisma.playlistFile.updateMany({
-        where: {
-          playlistId,
-          duration: { not: duration },
-          OR: [
-            { fileId: null },
-            { file: { fileType: { not: { startsWith: "video/" } } } },
-          ],
-        },
-        data: { duration },
-      });
-
-      const updated = await prisma.playlist.update({
+    if (playlist.defaultDuration != defaultDuration) {
+       await prisma.playlist.update({
         where: { id: playlistId },
-        data: { name, defaultDuration: duration },
+        data: { name, defaultDuration: defaultDuration },
       });
 
       return reply
         .status(200)
-        .send({ message: "Playlist updated successfully", playlist: updated });
+        .send({ message: "Playlist updated successfully" });
     }
 
-    const updated = await prisma.playlist.update({
+    await prisma.playlist.update({
       where: { id: playlistId },
       data: { name },
     });
 
     return reply
       .status(200)
-      .send({ message: "Playlist updated successfully", playlist: updated });
+      .send({ message: "Playlist updated successfully" });
   } catch (e) {
     console.log("Edit playlist error: ", e);
     const { status, payload } = toHttpError(e);
@@ -574,7 +653,7 @@ export const editPlaylist = async (req: FastifyRequest, reply: FastifyReply) => 
 
 export const addToPlaylist = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
     const { playlistId, fileId, duration } = req.body as {
@@ -627,7 +706,7 @@ export const addToPlaylist = async (
 
 export const addSubPlaylist = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
     const { playlistId, subPlaylistId } = req.body as {
@@ -680,7 +759,7 @@ export const addSubPlaylist = async (
 
     const nextPlayOrder = (last?.playOrder ?? 0) + 1;
 
-     await prisma.playlistFile.create({
+    await prisma.playlistFile.create({
       data: {
         playlistId,
         subPlaylistId,
@@ -702,7 +781,7 @@ export const addSubPlaylist = async (
 
 export const movePlaylistFile = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
     const { playlistFileId, playOrder: newOrder } = req.body as {
@@ -766,7 +845,7 @@ export const movePlaylistFile = async (
 
 export const deletePlaylistFile = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
     const { playlistFileId } = req.params as { playlistFileId: number };
@@ -811,7 +890,7 @@ export const deletePlaylistFile = async (
 
 export const deletePlaylist = async (
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => {
   try {
     const { playlistId } = req.params as { playlistId: number };
@@ -842,12 +921,19 @@ export const deletePlaylist = async (
   }
 };
 
-export const bulkAddSubPlaylistsToPlaylist = async (req: FastifyRequest, reply: FastifyReply) => {
+export const bulkAddSubPlaylistsToPlaylist = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
-    const { playlistId, items } = req.body as { playlistId: number; items: BulkAddSubPlaylistItem[] };
+    const { playlistId, items } = req.body as {
+      playlistId: number;
+      items: BulkAddSubPlaylistItem[];
+    };
 
     const pid = Number(playlistId);
-    if (!Number.isFinite(pid)) return reply.status(400).send({ message: "Invalid playlistId" });
+    if (!Number.isFinite(pid))
+      return reply.status(400).send({ message: "Invalid playlistId" });
 
     if (!Array.isArray(items) || items.length === 0) {
       return reply.status(400).send({ message: "items is required" });
@@ -863,13 +949,18 @@ export const bulkAddSubPlaylistsToPlaylist = async (req: FastifyRequest, reply: 
           Number.isFinite(x.subPlaylistId) &&
           Number.isFinite(x.duration) &&
           x.duration > 0 &&
-          x.subPlaylistId !== pid
+          x.subPlaylistId !== pid,
       );
 
-    if (normalized.length === 0) return reply.status(400).send({ message: "No valid items" });
+    if (normalized.length === 0)
+      return reply.status(400).send({ message: "No valid items" });
 
-    const playlist = await prisma.playlist.findUnique({ where: { id: pid }, select: { id: true } });
-    if (!playlist) return reply.status(404).send({ message: "Playlist not found" });
+    const playlist = await prisma.playlist.findUnique({
+      where: { id: pid },
+      select: { id: true },
+    });
+    if (!playlist)
+      return reply.status(404).send({ message: "Playlist not found" });
 
     const subIds = Array.from(new Set(normalized.map((x) => x.subPlaylistId)));
 
@@ -879,7 +970,9 @@ export const bulkAddSubPlaylistsToPlaylist = async (req: FastifyRequest, reply: 
     });
     const validSubIdSet = new Set(subs.map((s) => s.id));
 
-    const validItems = normalized.filter((x) => validSubIdSet.has(x.subPlaylistId));
+    const validItems = normalized.filter((x) =>
+      validSubIdSet.has(x.subPlaylistId),
+    );
     if (validItems.length === 0)
       return reply.status(404).send({ message: "No valid subPlaylists found" });
 
@@ -913,25 +1006,45 @@ export const bulkAddSubPlaylistsToPlaylist = async (req: FastifyRequest, reply: 
   }
 };
 
-export const bulkAddFilesToPlaylist = async (req: FastifyRequest, reply: FastifyReply) => {
+export const bulkAddFilesToPlaylist = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
-    const { playlistId, items } = req.body as { playlistId: number; items: BulkAddFileItem[] };
+    const { playlistId, items } = req.body as {
+      playlistId: number;
+      items: BulkAddFileItem[];
+    };
 
     const pid = Number(playlistId);
-    if (!Number.isFinite(pid)) return reply.status(400).send({ message: "Invalid playlistId" });
+    if (!Number.isFinite(pid))
+      return reply.status(400).send({ message: "Invalid playlistId" });
 
     if (!Array.isArray(items) || items.length === 0) {
       return reply.status(400).send({ message: "items is required" });
     }
 
     const normalized = items
-      .map((x) => ({ fileId: Number(x.fileId), duration: Math.floor(Number(x.duration)) }))
-      .filter((x) => Number.isFinite(x.fileId) && Number.isFinite(x.duration) && x.duration > 0);
+      .map((x) => ({
+        fileId: Number(x.fileId),
+        duration: Math.floor(Number(x.duration)),
+      }))
+      .filter(
+        (x) =>
+          Number.isFinite(x.fileId) &&
+          Number.isFinite(x.duration) &&
+          x.duration > 0,
+      );
 
-    if (normalized.length === 0) return reply.status(400).send({ message: "No valid items" });
+    if (normalized.length === 0)
+      return reply.status(400).send({ message: "No valid items" });
 
-    const playlist = await prisma.playlist.findUnique({ where: { id: pid }, select: { id: true } });
-    if (!playlist) return reply.status(404).send({ message: "Playlist not found" });
+    const playlist = await prisma.playlist.findUnique({
+      where: { id: pid },
+      select: { id: true },
+    });
+    if (!playlist)
+      return reply.status(404).send({ message: "Playlist not found" });
 
     const fileIds = Array.from(new Set(normalized.map((x) => x.fileId)));
 
@@ -942,7 +1055,8 @@ export const bulkAddFilesToPlaylist = async (req: FastifyRequest, reply: Fastify
     const validFileIdSet = new Set(files.map((f) => f.id));
 
     const validItems = normalized.filter((x) => validFileIdSet.has(x.fileId));
-    if (validItems.length === 0) return reply.status(404).send({ message: "No valid files found" });
+    if (validItems.length === 0)
+      return reply.status(404).send({ message: "No valid files found" });
 
     const maxOrder = await prisma.playlistFile.aggregate({
       where: { playlistId: pid },

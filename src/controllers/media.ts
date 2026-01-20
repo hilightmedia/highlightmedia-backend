@@ -4,7 +4,6 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { generateSignedUrl, handleUpload } from "../services/file";
 import {
   MediaStatus,
-  MulterFile,
   SizeBucket,
   SortBy,
   SortByFile,
@@ -56,6 +55,7 @@ export async function getClientFolders(
             fileKey: true,
             fileType: true,
             fileSize: true,
+            duration: true,
             updatedAt: true,
           },
         },
@@ -104,10 +104,18 @@ export async function getClientFolders(
 
     const computed = await Promise.all(
       (folders as any[]).map(async (folder: any) => {
-        const folderSizeMb = (folder.files ?? []).reduce(
+        const folderSizeBytes = (folder.files ?? []).reduce(
           (sum: number, f: any) => {
             const bytes = Number(f.fileSize ?? 0);
-            return sum + (Number.isFinite(bytes) ? bytes / (1024 * 1024) : 0);
+            return sum + (Number.isFinite(bytes) ? bytes : 0);
+          },
+          0,
+        );
+
+        const folderDuration = (folder.files ?? []).reduce(
+          (sum: number, f: any) => {
+            const d = Number(f.duration ?? 0);
+            return sum + (Number.isFinite(d) ? d : 0);
           },
           0,
         );
@@ -172,7 +180,8 @@ export async function getClientFolders(
           verified: folder.verified,
           validityStatus,
           statusBucket,
-          folderSize: Number(folderSizeMb.toFixed(2)),
+          folderSize: folderSizeBytes,
+          folderDuration,
           thumbnail,
           lastModified,
           validityPeriodMs,
@@ -261,6 +270,7 @@ export async function getClientFolders(
     return reply.status(status).send(payload);
   }
 }
+
 
 export const createFolder = async (
   req: FastifyRequest,
@@ -407,79 +417,110 @@ export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
 
     const { folderId } = req.params as { folderId: number };
     const folder_id = Number(folderId);
-    if (!Number.isFinite(folder_id))
+    if (!Number.isFinite(folder_id)) {
       return reply.status(400).send({ message: "Invalid folderId" });
+    }
 
     const folder = await prisma.folder.findFirst({
       where: { id: folder_id, isDeleted: false },
     });
     if (!folder) return reply.status(404).send({ message: "Folder not found" });
 
-    const uploaded: any[] = [];
-    let count = 0;
+    const prefix = folder.name.replace(/[^a-zA-Z0-9]/g, "_");
 
-    const parts = req.parts();
+    let filename: string | null = null;
+    let mimetype: string | null = null;
 
-    for await (const part of parts) {
-      if (part.type !== "file") continue;
+    let sizeRaw: any = undefined;
+    let durationRaw: any = undefined;
+    let typeRaw: any = undefined;
 
-      count++;
-      if (count > 10) {
-        return reply.status(400).send({ message: "Maximum 10 files allowed" });
-      }
+    let uploadPromise: Promise<{ key: string; url: string }> | null = null;
 
-      if (!ALLOWED_MIME.has(part.mimetype)) {
-        return reply.status(400).send({
-          message: `Invalid file type for "${part.filename}". Only image/video/pdf allowed`,
+    for await (const part of req.parts()) {
+      if (part.type === "file") {
+        if (uploadPromise) {
+          return reply.status(400).send({ message: "Only 1 file allowed" });
+        }
+
+        if (!ALLOWED_MIME.has(part.mimetype)) {
+          return reply.status(400).send({
+            message: `Invalid file type for "${part.filename}". Only image/video/pdf allowed`,
+            mimetype: part.mimetype,
+          });
+        }
+
+        filename = part.filename;
+        mimetype = part.mimetype;
+
+        uploadPromise = handleUpload({
+          fileStream: part.file,
+          originalname: part.filename,
           mimetype: part.mimetype,
+          prefix,
         });
+
+        continue;
       }
 
-      const chunks: Buffer[] = [];
-      let size = 0;
-
-      for await (const chunk of part.file) {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        size += buf.length;
-        chunks.push(buf);
+      if (part.type === "field") {
+        if (part.fieldname === "size") sizeRaw = part.value;
+        if (part.fieldname === "duration") durationRaw = part.value;
+        if (part.fieldname === "type") typeRaw = part.value;
       }
-
-      const buffer = Buffer.concat(chunks);
-
-      const fileForS3: MulterFile = {
-        originalname: part.filename,
-        mimetype: part.mimetype,
-        buffer,
-        size,
-      };
-
-      const { key, url } = await handleUpload({
-        file: fileForS3,
-        prefix: folder.name.replace(/[^a-zA-Z0-9]/g, "_"),
-      });
-
-      const media = await prisma.file.create({
-        data: {
-          folderId: folder_id,
-          name: part.filename,
-          verified: true,
-          fileType: part.mimetype,
-          fileKey: key,
-          fileSize: String(size),
-        },
-      });
-
-      uploaded.push({ ...media, signedUrl: url });
     }
 
-    if (uploaded.length === 0) {
-      return reply.status(400).send({ message: "No files found" });
+    if (!uploadPromise || !filename || !mimetype) {
+      return reply.status(400).send({ message: "No file found" });
     }
+
+    const duration =
+      typeof durationRaw === "string" && durationRaw.trim() !== ""
+        ? Number(durationRaw)
+        : null;
+
+    const fileSize =
+      typeof sizeRaw === "string" && sizeRaw.trim() !== ""
+        ? Number(sizeRaw)
+        : null;
+
+    if (duration !== null && (!Number.isFinite(duration) || duration < 0)) {
+      return reply.status(400).send({ message: "Invalid duration" });
+    }
+
+    if (fileSize !== null && (!Number.isFinite(fileSize) || fileSize < 0)) {
+      return reply.status(400).send({ message: "Invalid file size" });
+    }
+
+    if (typeof typeRaw === "string" && typeRaw.trim() !== "") {
+      if (typeRaw !== mimetype) {
+        return reply.status(400).send({ message: "Invalid type" });
+      }
+    }
+
+    const result = await uploadPromise;
+
+    const media = await prisma.file.create({
+      data: {
+        folder: { connect: { id: folder_id } },
+        name: filename,
+        verified: true,
+        fileType: mimetype,
+        fileKey: result.key,
+        fileSize: String(fileSize ?? 0),
+        duration: String(duration ?? 0),
+      },
+    });
 
     return reply.status(200).send({
       message: "Media uploaded successfully",
-      count: uploaded.length,
-      media: uploaded,
+      media: { ...media, signedUrl: result.url },
+      meta: {
+        file: filename,
+        size: fileSize,
+        duration,
+        type: mimetype,
+      },
     });
   } catch (e) {
     console.log("Upload media error: ", e);
@@ -562,6 +603,7 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
         fileKey: true,
         fileType: true,
         fileSize: true,
+        duration: true,
         createdAt: true,
         updatedAt: true,
         folderId: true,
@@ -591,9 +633,12 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
     let enriched = await Promise.all(
       media.map(async (m) => {
         const signedUrl = await generateSignedUrl(m.fileKey);
-        const sizeMb = Number(
-          ((Number(m.fileSize ?? 0) || 0) / (1024 * 1024)).toFixed(2),
-        );
+        const sizeBytes = Number(m.fileSize ?? 0);
+        const safeSizeBytes = Number.isFinite(sizeBytes) ? sizeBytes : 0;
+
+        const durationRaw = Number(m.duration ?? 0);
+        const safeDuration = Number.isFinite(durationRaw) ? durationRaw : 0;
+
         const mediaStatus: MediaStatus = activeFileIdSet.has(m.id)
           ? "active"
           : "inactive";
@@ -601,7 +646,8 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
         return {
           ...m,
           url: signedUrl,
-          fileSize: sizeMb,
+          fileSize: safeSizeBytes,
+          duration: safeDuration,
           status: mediaStatus,
           fileTypeGroup: toTopLevelType(m.fileType),
         };
@@ -674,6 +720,7 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
     return reply.status(status).send(payload);
   }
 };
+
 
 export const editFileName = async (
   req: FastifyRequest,
@@ -811,7 +858,7 @@ export const bulkFolderDelete = async (
 
     const files = await prisma.file.findMany({
       where: { folderId: { in: ids }, isDeleted: false },
-      select: { fileKey: true },
+      select: { fileKey: true, id: true },
     });
 
     const now = new Date();
@@ -878,7 +925,7 @@ export const getFolderFiles = async (
 
     const files = await prisma.file.findMany({
       where: { folderId: id, isDeleted: false }, // ✅ use id (number)
-      select: { id: true, name: true, fileType: true, fileKey: true },
+      select: { id: true, name: true, fileType: true, fileKey: true,duration: true },
     });
 
     const fileUrlUpdate = await Promise.all(

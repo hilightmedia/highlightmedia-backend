@@ -9,6 +9,7 @@ import {
   createPlaylist,
   deletePlaylist,
   deletePlaylistFile,
+  editPlaylist,
   getPlayList,
   getPlaylistById,
   getPlaylistOnly,
@@ -184,5 +185,30 @@ export default async function playlistRoutes(app: FastifyInstance) {
       preHandler: [authGuard],
     },
     bulkAddSubPlaylistsToPlaylist
+  );
+
+  app.post(
+    "/:playlistId/edit-playlist",
+    {
+      schema: {
+        params: {
+          type: "object",
+          required: ["playlistId"],
+          properties: {
+            playlistId: { type: "number" },
+          },
+        },
+        body: {
+          type: "object",
+          required: ["name", "defaultDuration"],
+          properties: {
+            name: { type: "string", minLength: 3, maxLength: 50 },
+            defaultDuration: { type: "number", minimum: 1, maximum: 300 },
+          },
+        },
+      },
+      preHandler: [authGuard],
+    },
+    editPlaylist
   );
 }

@@ -1,11 +1,99 @@
 import { FastifyInstance } from "fastify";
-import { getPlayers, createPlayer, loginPlayer } from "../controllers/player";
+import { getPlayers,  deletePlayer, createPlayer, editPlayer, updatePlayerPlaylist } from "../controllers/player";
 import { authGuard } from "../services/authGuard";
 
-
 export default async function playerRoutes(app: FastifyInstance) {
-  app.get("/", { preHandler: [authGuard] }, getPlayers);
-  app.post("/", { preHandler: [authGuard] }, createPlayer);
+   app.get(
+    "/",
+    {
+      preHandler: [authGuard],
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            sortBy: {
+              type: "string",
+              enum: ["status", "lastActive", "duration", "name"],
+            },
+            sortOrder: { type: "string", enum: ["asc", "desc"] },
+            status: { type: "string", enum: ["Online", "Offline"] },
+          },
+        },
+      },
+    },
+    getPlayers,
+  );
 
-  app.post("/login", loginPlayer);
+  app.delete(
+    "/:id",
+    {
+      preHandler: [authGuard],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string" } },
+        },
+      },
+    },
+    deletePlayer,
+  );
+  app.post(
+    "/",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["name", "location", "playlistId","deviceKey"],
+          properties: {
+            name: { type: "string" },
+            location: { type: "string" },
+            playlistId: { type: "number" },
+            deviceKey: { type: "string", minLength: 8, maxLength: 16 },
+          },
+        },
+      },
+      preHandler: [authGuard],
+    },
+    createPlayer,
+  );
+ app.post(
+    "/edit",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["name", "location", "playlistId","deviceKey","playerId"],
+          properties: {
+            playerId: { type: "number" },
+            name: { type: "string" },
+            location: { type: "string" },
+            playlistId: { type: "number" },
+            deviceKey: { type: "string", minLength: 8, maxLength: 16 },
+          },
+        },
+      },
+      preHandler: [authGuard],
+    },
+    editPlayer,
+  );
+    app.post(
+    "/:playerId/update-playlist",
+    {
+      preHandler: [authGuard],
+      schema: {
+        params: {
+          type: "object",
+          required: ["playerId"],
+          properties: { playerId: { type: "string" } },
+        },
+        body: {
+          type: "object",
+          required: ["playlistId"],
+          properties: { playlistId: { type: ["number"] } },
+        },
+      },
+    },
+    updatePlayerPlaylist,
+  );
 }

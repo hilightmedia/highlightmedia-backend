@@ -1,5 +1,6 @@
 import { SortOrder } from "../types/types";
 
+
 function parseDateMaybe(v: unknown): Date | null {
   if (!v) return null;
   const d = new Date(String(v));
@@ -21,5 +22,12 @@ function topType(mimeOrType: string) {
   return mimeOrType.includes("/") ? mimeOrType.split("/")[0] : mimeOrType;
 }
 
+function diffSec(a: Date, b: Date) {
+  const ms = a.getTime() - b.getTime();
+  return Math.max(0, Math.floor(ms / 1000));
+}
 
-export { parseDateMaybe, compare, toTopLevelType, topType };
+
+
+
+export { parseDateMaybe, compare, toTopLevelType, topType, diffSec };
