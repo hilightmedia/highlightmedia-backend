@@ -626,7 +626,7 @@ export const editPlaylist = async (
       return reply.status(404).send({ message: "Playlist not found" });
 
     if (playlist.defaultDuration != defaultDuration) {
-       await prisma.playlist.update({
+      await prisma.playlist.update({
         where: { id: playlistId },
         data: { name, defaultDuration: defaultDuration },
       });
@@ -641,9 +641,7 @@ export const editPlaylist = async (
       data: { name },
     });
 
-    return reply
-      .status(200)
-      .send({ message: "Playlist updated successfully" });
+    return reply.status(200).send({ message: "Playlist updated successfully" });
   } catch (e) {
     console.log("Edit playlist error: ", e);
     const { status, payload } = toHttpError(e);
@@ -908,7 +906,11 @@ export const deletePlaylist = async (
     if (!playlist)
       return reply.status(404).send({ message: "Playlist not found" });
 
-    await prisma.playlist.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.playlistFile.deleteMany({ where: { playlistId: id } });
+
+      await tx.playlist.delete({ where: { id } });
+    });
 
     return reply.status(200).send({
       message: "Playlist deleted successfully",
