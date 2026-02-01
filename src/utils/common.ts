@@ -1,6 +1,5 @@
 import { SortOrder } from "../types/types";
 
-
 function parseDateMaybe(v: unknown): Date | null {
   if (!v) return null;
   const d = new Date(String(v));
@@ -27,7 +26,10 @@ function diffSec(a: Date, b: Date) {
   return Math.max(0, Math.floor(ms / 1000));
 }
 
+const toNullableInt = (v: unknown) => {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
-
-
-export { parseDateMaybe, compare, toTopLevelType, topType, diffSec };
+export { parseDateMaybe, compare, toTopLevelType, topType, diffSec, toNullableInt };

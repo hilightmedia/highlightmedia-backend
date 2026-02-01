@@ -47,3 +47,98 @@ export type PlayerStatusFilter = "Online" | "Offline";
 
 export type BulkAddFileItem = { fileId: number; duration: number };
 export type BulkAddSubPlaylistItem = { subPlaylistId: number; duration: number };
+
+export type StartSessionParams = { deviceCode: string };
+export type EndSessionParams = { deviceCode: string };
+
+export type StartSessionBody = {
+  forceNew?: boolean;
+};
+
+export type EndSessionBody = {
+  endAll?: boolean;
+};
+
+export type LinkPlayerBody = {
+  deviceName: string;
+  deviceKey: string;
+};
+
+export type GetPlaylistParams = {
+  deviceCode: string;
+};
+
+export type CreatePlayLogParams = {
+  deviceCode: string;
+};
+
+export type CreatePlayLogBody = {
+  playlistFileId?: number | null;
+  fileId: number;
+  playlistId?: number | null;
+  subPlaylistId?: number | null;
+  isSubPlaylist?: boolean;
+};
+
+
+export type FileDto = {
+  id: number;
+  name: string;
+  type: string;
+  fileKey: string;
+  size: number;
+  duration: number | null;
+  verified: boolean;
+  folderId: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type PlaylistFileDto = {
+  id: number;
+  playOrder: number;
+  duration: number | null;
+  isSubPlaylist: boolean;
+  fileId: number | null;
+  subPlaylistId: number | null;
+  file: FileDto | null;
+  subPlaylist: PlaylistDto | null;
+};
+
+export type PlaylistDto = {
+  id: number;
+  name: string;
+  defaultDuration: number | null;
+  playlistFiles: PlaylistFileDto[];
+};
+
+export type DbFile = {
+  id: number;
+  name: string;
+  fileType: string;
+  fileKey: string;
+  fileSize: number;
+  duration: number | null;
+  verified: boolean;
+  folderId: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type DbPlaylistFile = {
+  id: number;
+  playOrder: number;
+  duration: number | null;
+  isSubPlaylist: boolean;
+  fileId: number | null;
+  subPlaylistId: number | null;
+  file: DbFile | null;
+};
+
+export type DbSubPlaylist = {
+  id: number;
+  name: string;
+  defaultDuration: number | null;
+  playlistFiles: DbPlaylistFile[];
+};
+

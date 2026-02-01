@@ -40,6 +40,8 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
         linked: true,
         updatedAt: true,
         playlist: { select: { id: true, name: true } },
+        deviceCode: true,
+        deviceKey: true,
         sessions: {
           orderBy: { startedAt: "desc" },
           take: 1,
@@ -96,6 +98,8 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
         sessionDurationSec,
         linked: p.linked,
         location: p.location,
+        deviceCode: p.deviceCode,
+        deviceKey: p.deviceKey,
       };
     });
 

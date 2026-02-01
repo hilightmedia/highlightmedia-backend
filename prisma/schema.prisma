@@ -116,6 +116,8 @@ model Player {
   playLogs PlayLog[]
 
   @@index([playlistId])
+  @@index([deviceCode])
+  @@index([name])
   @@map("Players")
 }
 
@@ -145,7 +147,7 @@ model PlayLog {
   isSubPlaylist  Boolean  @default(false)
   createdAt      DateTime @default(now())
 
-  player       Player?       @relation(fields: [playerId], references: [id], onDelete: SetNull) // ✅ make optional
+  player       Player?       @relation(fields: [playerId], references: [id], onDelete: SetNull)
   playlistFile PlaylistFile? @relation(fields: [playlistFileId], references: [id], onDelete: SetNull)
   file         File          @relation(fields: [fileId], references: [id], onDelete: Cascade)
   playlist     Playlist?     @relation("PlayLogPlaylist", fields: [playlistId], references: [id], onDelete: SetNull)

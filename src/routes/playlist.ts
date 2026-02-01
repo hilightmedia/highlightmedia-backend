@@ -212,3 +212,4 @@ export default async function playlistRoutes(app: FastifyInstance) {
     editPlaylist
   );
 }
+
