@@ -37,41 +37,34 @@ export const getTrash = async (req: FastifyRequest, reply: FastifyReply) => {
         ? search.trim()
         : null;
 
-    const [folders, files] = await Promise.all([
-      prisma.folder.findMany({
-        where: {
-          isDeleted: true,
-          ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
-        },
-        orderBy: { deletedAt: "desc" },
-        select: { id: true, name: true, deletedAt: true },
-      }),
-      prisma.file.findMany({
-        where: {
-          isDeleted: true,
-          ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
-        },
-        orderBy: { deletedAt: "desc" },
-        select: {
-          id: true,
-          name: true,
-          fileType: true,
-          fileKey: true,
-          deletedAt: true,
-          folder: { select: { id: true, name: true, isDeleted: true } },
-        },
-      }),
-    ]);
+    const files = await prisma.file.findMany({
+      where: {
+        isDeleted: true,
+        ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+      },
+      orderBy: { deletedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        fileType: true,
+        fileKey: true,
+        deletedAt: true,
+        folder: { select: { id: true, name: true, isDeleted: true } },
+      },
+    });
 
-    const fileCards = await Promise.all(
+    const items = await Promise.all(
       files.map(async (f) => {
-        const isImage = (f.fileType ?? "").split("/")[0] === "image";
-        const thumbnail = isImage && f.fileKey ? await generateSignedUrl(f.fileKey) : "";
+        const majorType = (f.fileType ?? "").split("/")[0] || "file";
+        const isImage = majorType === "image";
+        const thumbnail =
+          isImage && f.fileKey ? await generateSignedUrl(f.fileKey) : "";
+
         return {
           kind: "file" as const,
           id: f.id,
           name: f.name,
-          type: (f.fileType ?? "").split("/")[0] || "file",
+          type: majorType,
           location: f.folder?.name ?? "",
           folderId: f.folder?.id ?? null,
           folderDeleted: Boolean(f.folder?.isDeleted),
@@ -79,27 +72,8 @@ export const getTrash = async (req: FastifyRequest, reply: FastifyReply) => {
           deletedAtLabel: f.deletedAt ? formatDDMMYYYY(f.deletedAt) : "",
           thumbnail,
         };
-      })
+      }),
     );
-
-    const folderCards = folders.map((x) => ({
-      kind: "folder" as const,
-      id: x.id,
-      name: x.name,
-      type: "folder",
-      location: "Media",
-      folderId: x.id,
-      folderDeleted: true,
-      deletedAt: x.deletedAt,
-      deletedAtLabel: x.deletedAt ? formatDDMMYYYY(x.deletedAt) : "",
-      thumbnail: "",
-    }));
-
-    const items = [...folderCards, ...fileCards].sort((a, b) => {
-      const ad = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
-      const bd = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
-      return bd - ad;
-    });
 
     return reply.status(200).send({ message: "Trash fetched", items });
   } catch (e) {
@@ -108,6 +82,7 @@ export const getTrash = async (req: FastifyRequest, reply: FastifyReply) => {
     return reply.status(status).send(payload);
   }
 };
+
 
 export const restoreTrashItem = async (req: FastifyRequest, reply: FastifyReply) => {
   try {

@@ -17,6 +17,7 @@ import playlistRoutes from "./routes/playlist.js";
 import playerRoutes from "./routes/player.js";
 import trashRoutes from "./routes/trash.js";
 import tvAppRoutes from "./routes/tvapp.js";
+import analyticsRoutes from "./routes/analytics.js";
 
 const fastify = Fastify({
   logger: {
@@ -151,11 +152,7 @@ await fastify.register(playlistRoutes, { prefix: "/api/playlist" });
 await fastify.register(playerRoutes, { prefix: "/api/players" });
 await fastify.register(trashRoutes, { prefix: "/api/trash" });
 await fastify.register(tvAppRoutes, { prefix: "/api/tv-app" });
-
-fastify.get("/openapi.json", async (_req, reply) => {
-  const doc = fastify.swagger();
-  reply.send(doc);
-});
+await fastify.register(analyticsRoutes, { prefix: "/api/analytics" });
 
 const start = async () => {
   try {

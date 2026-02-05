@@ -18,7 +18,7 @@ export async function createAdminUser(
 
     const hashPassword = await hashValue(password);
 
-    await prisma.AdminUser.create({
+    await prisma.adminUser.create({
       data: {
         email,
         name,
@@ -39,7 +39,7 @@ export async function createAdminUser(
 export async function loginAdminUser(req: FastifyRequest, reply: FastifyReply) {
   try {
     const { email, password } = req.body as { email: string; password: string };
-    const user = await prisma.AdminUser.findUnique({
+    const user = await prisma.adminUser.findUnique({
       where: {
         email,
       },
