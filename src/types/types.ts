@@ -61,11 +61,12 @@ export type EndSessionBody = {
 
 export type LinkPlayerBody = {
   deviceName: string;
-  deviceKey: string;
+  deviceKey?: string;
 };
 
 export type GetPlaylistParams = {
   deviceCode: string;
+  playlistId?: number;
 };
 
 export type CreatePlayLogParams = {
@@ -142,3 +143,48 @@ export type DbSubPlaylist = {
   playlistFiles: DbPlaylistFile[];
 };
 
+export type ActivityItem = {
+  id: string;
+  type: "ONLINE" | "OFFLINE";
+  playerId: number;
+  playerName: string;
+  at: Date;
+  message: string;
+};
+
+export type ApiFile = {
+  id: number;
+  name: string;
+  fileType: string;
+  fileKey: string;
+  fileSize: string;
+  duration: string;
+  verified: boolean;
+  folderId: number | null;
+  createdAt: string | Record<string, any>;
+  updatedAt: string | Record<string, any>;
+  signedUrl: string | null;
+};
+
+
+export type ApiPlaylistFile = {
+  id: number;
+  playOrder: number;
+  duration: number | null;
+  isSubPlaylist: boolean;
+  fileId: number | null;
+  subPlaylistId: number | null;
+  file: ApiFile | null;
+  subPlaylist: ApiPlaylist | null;
+};
+
+export type ApiPlaylist = {
+  id: number;
+  name: string;
+  defaultDuration: number;
+  playlistFiles: ApiPlaylistFile[];
+};
+
+
+export type TopClientItem = { folderId: number; folderName: string; adsPlayed: number };
+export type TopPlayerItem = { playerId: number; playerName: string; adsPlayed: number };

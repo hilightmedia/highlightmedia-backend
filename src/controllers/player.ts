@@ -1,8 +1,9 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import toHttpError from "../utils/toHttpError";
 import { prisma } from "../db/client";
-import { compare, diffSec } from "../utils/common";
+import { compare, diffSec, formatTime } from "../utils/common";
 import {
+  ActivityItem,
   PlayerRow,
   PlayerSortBy,
   PlayerStatusFilter,
@@ -21,10 +22,13 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
 
     const parsedSortBy = (sortBy as PlayerSortBy) ?? "lastActive";
     const parsedSortOrder = (sortOrder as SortOrder) ?? "desc";
-    const statusFilter = (status as PlayerStatusFilter | undefined) ?? undefined;
+    const statusFilter =
+      (status as PlayerStatusFilter | undefined) ?? undefined;
 
     const searchTerm =
-      typeof search === "string" && search.trim().length > 0 ? search.trim() : null;
+      typeof search === "string" && search.trim().length > 0
+        ? search.trim()
+        : null;
 
     const players = await prisma.player.findMany({
       orderBy: { updatedAt: "desc" },
@@ -108,7 +112,11 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
     rows.sort((a, b) => {
       switch (parsedSortBy) {
         case "name":
-          return compare(a.name.toLowerCase(), b.name.toLowerCase(), parsedSortOrder);
+          return compare(
+            a.name.toLowerCase(),
+            b.name.toLowerCase(),
+            parsedSortOrder,
+          );
         case "status":
           return compare(a.status, b.status, parsedSortOrder);
         case "duration": {
@@ -181,10 +189,7 @@ export const createPlayer = async (
   }
 };
 
-export const editPlayer = async (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => {
+export const editPlayer = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const { name, location, playlistId, deviceKey, playerId } = req.body as {
       playerId: number;
@@ -209,8 +214,8 @@ export const editPlayer = async (
         location: location.trim(),
         playlistId: playlistId,
         deviceKey: deviceKey.trim(),
-      }
-    })
+      },
+    });
     return reply.status(201).send({ message: "Player created successfully" });
   } catch (e) {
     console.log("Create player error: ", e);
@@ -269,12 +274,11 @@ export const updatePlayerPlaylist = async (
       return reply.status(400).send({ message: "Invalid playerId" });
     }
 
-      const pl = await prisma.playlist.findUnique({
-        where: { id: Number(playlistId) },
-        select: { id: true },
-      });
-      if (!pl) return reply.status(404).send({ message: "Playlist not found" });
-    
+    const pl = await prisma.playlist.findUnique({
+      where: { id: Number(playlistId) },
+      select: { id: true },
+    });
+    if (!pl) return reply.status(404).send({ message: "Playlist not found" });
 
     const player = await prisma.player.findUnique({
       where: { id: pid },
@@ -284,7 +288,7 @@ export const updatePlayerPlaylist = async (
 
     await prisma.player.update({
       where: { id: pid },
-      data: { playlistId: playlistId},
+      data: { playlistId: playlistId },
     });
 
     return reply.status(200).send({ message: "Playlist updated successfully" });
@@ -294,3 +298,85 @@ export const updatePlayerPlaylist = async (
     return reply.status(status).send(payload);
   }
 };
+
+export const getActivity = async (req: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const q = (req.query ?? {}) as { offset?: string | number; limit?: string | number };
+
+    const offset = Math.max(0, Number(q.offset ?? 0));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 10)));
+
+    const [totalSessions, totalEnded] = await Promise.all([
+      prisma.playerSession.count(),
+      prisma.playerSession.count({ where: { endedAt: { not: null } } }),
+    ]);
+
+    const total = totalSessions + totalEnded;
+
+    const take = Math.min(500, offset + limit);
+
+    const sessions = await prisma.playerSession.findMany({
+      orderBy: { startedAt: "desc" },
+      take,
+      include: { player: { select: { id: true, name: true } } },
+    });
+
+    const all: ActivityItem[] = [];
+
+    for (const s of sessions) {
+      const playerId = s.player?.id ?? s.playerId;
+      const playerName = s.player?.name ?? "Unknown";
+
+      all.push({
+        id: `session:${s.id}:online`,
+        type: "ONLINE",
+        playerId,
+        playerName,
+        at: s.startedAt,
+        message: `Player - ${playerName} came Online | ${formatTime(s.startedAt)}`,
+      });
+
+      if (s.endedAt) {
+        all.push({
+          id: `session:${s.id}:offline`,
+          type: "OFFLINE",
+          playerId,
+          playerName,
+          at: s.endedAt,
+          message: `Player - ${playerName} went offline | ${formatTime(s.endedAt)}`,
+        });
+      }
+    }
+
+    all.sort((a, b) => b.at.getTime() - a.at.getTime());
+
+    const items = all.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
+
+    return reply.status(200).send({
+      activity: items.map((x) => ({
+        id: x.id,
+        type: x.type,
+        playerId: x.playerId,
+        playerName: x.playerName,
+        at: x.at,
+        message: x.message,
+      })),
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore,
+      },
+    });
+  } catch (e) {
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+
+
+export const getPlayerLogs = (req: FastifyRequest, reply: FastifyReply) => {
+  
+}

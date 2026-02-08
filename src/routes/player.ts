@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { getPlayers,  deletePlayer, createPlayer, editPlayer, updatePlayerPlaylist } from "../controllers/player";
+import { getPlayers,  deletePlayer, createPlayer, editPlayer, updatePlayerPlaylist, getActivity } from "../controllers/player";
 import { authGuard } from "../services/authGuard";
+import { getActivitySchema } from "../schemas/player";
 
 export default async function playerRoutes(app: FastifyInstance) {
    app.get(
@@ -96,4 +97,6 @@ export default async function playerRoutes(app: FastifyInstance) {
     },
     updatePlayerPlaylist,
   );
+
+  app.get("/get-activity", getActivitySchema, getActivity);
 }

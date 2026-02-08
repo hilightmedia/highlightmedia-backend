@@ -24,7 +24,7 @@ export default async function tvAppRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get<{ Params: DeviceCodeParams }>(
-    "/player/:deviceCode/playlist",
+    "/player/:deviceCode/playlist/:playlistId?",
     getPlaylistSchema,
     getPlayList,
   );

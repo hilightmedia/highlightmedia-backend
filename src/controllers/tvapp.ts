@@ -1,8 +1,10 @@
 import { FastifyReply, FastifyRequest, RouteShorthandOptions } from "fastify";
 import toHttpError from "../utils/toHttpError";
 import { prisma } from "../db/client";
-import { StartSessionParams, StartSessionBody, EndSessionParams, EndSessionBody, LinkPlayerBody, CreatePlayLogBody, CreatePlayLogParams, GetPlaylistParams, DbPlaylistFile, DbSubPlaylist, PlaylistDto, PlaylistFileDto, FileDto, DbFile } from "../types/types";
+import { StartSessionParams, StartSessionBody, EndSessionParams, EndSessionBody, LinkPlayerBody, CreatePlayLogBody, CreatePlayLogParams, GetPlaylistParams, DbPlaylistFile, DbSubPlaylist, PlaylistDto, PlaylistFileDto, FileDto, DbFile, ApiPlaylist, ApiPlaylistFile, ApiFile } from "../types/types";
 import { toNullableInt } from "../utils/common";
+import { toApiFileBase, toApiPlaylistFileBase } from "../utils/playlist";
+import { generateSignedUrl } from "../services/file";
 
 
 export const linkPlayer = async (
@@ -58,7 +60,7 @@ export const getPlayList = async (
   reply: FastifyReply,
 ) => {
   try {
-    const { deviceCode } = req.params;
+    const { deviceCode, playlistId } = req.params;
 
     const player = await prisma.player.findUnique({
       where: { deviceCode },
@@ -70,17 +72,13 @@ export const getPlayList = async (
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: Number(player.playlistId) },
-      select: {
-        id: true,
-        name: true,
-        defaultDuration: true,
-      },
+      select: { id: true, name: true, defaultDuration: true },
     });
 
     if (!playlist) return reply.status(200).send({ playlist: null });
 
-    const playlistFiles = (await prisma.playlistFile.findMany({
-      where: { playlistId: playlist.id },
+    const playlistFilesRaw = (await prisma.playlistFile.findMany({
+      where: { playlistId: playlistId || playlist.id },
       orderBy: { playOrder: "asc" },
       select: {
         id: true,
@@ -106,13 +104,138 @@ export const getPlayList = async (
       },
     })) as unknown as DbPlaylistFile[];
 
-    return reply.status(200).send({ playlist: {...playlist, playlistFiles } });
+    const subPlaylistIds = Array.from(
+      new Set(
+        playlistFilesRaw
+          .filter((pf) => pf.isSubPlaylist && pf.subPlaylistId != null)
+          .map((pf) => Number(pf.subPlaylistId)),
+      ),
+    );
+
+    const subPlaylists = subPlaylistIds.length
+      ? await prisma.playlist.findMany({
+          where: { id: { in: subPlaylistIds } },
+          select: { id: true, name: true, defaultDuration: true },
+        })
+      : [];
+
+    const subPlaylistById = new Map(subPlaylists.map((p) => [p.id, p]));
+
+    const subPlaylistFilesRaw = subPlaylistIds.length
+      ? await prisma.playlistFile.findMany({
+          where: { playlistId: { in: subPlaylistIds } },
+          orderBy: [{ playlistId: "asc" }, { playOrder: "asc" }],
+          select: {
+            id: true,
+            playlistId: true,
+            playOrder: true,
+            duration: true,
+            isSubPlaylist: true,
+            fileId: true,
+            subPlaylistId: true,
+            file: {
+              select: {
+                id: true,
+                name: true,
+                fileType: true,
+                fileKey: true,
+                fileSize: true,
+                duration: true,
+                verified: true,
+                folderId: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    const subFilesByPlaylistId = new Map<number, DbPlaylistFile[]>();
+    for (const pf of subPlaylistFilesRaw as unknown as (DbPlaylistFile & { playlistId: number })[]) {
+      const { playlistId, ...rest } = pf as any;
+      const arr = subFilesByPlaylistId.get(playlistId) ?? [];
+      arr.push(rest as DbPlaylistFile);
+      subFilesByPlaylistId.set(playlistId, arr);
+    }
+
+    const fileKeySet = new Set<string>();
+    for (const pf of playlistFilesRaw) {
+      if (pf.file?.fileKey) fileKeySet.add(pf.file.fileKey);
+    }
+    for (const subFiles of subFilesByPlaylistId.values()) {
+      for (const pf of subFiles) {
+        if (pf.file?.fileKey) fileKeySet.add(pf.file.fileKey);
+      }
+    }
+
+    const fileKeys = Array.from(fileKeySet);
+    const signedUrlByKey = new Map<string, string | null>();
+
+    await Promise.all(
+      fileKeys.map(async (key) => {
+        try {
+          const url = await generateSignedUrl(key);
+          signedUrlByKey.set(key, url ?? null);
+        } catch {
+          signedUrlByKey.set(key, null);
+        }
+      }),
+    );
+
+    const mapPfToApi = (pf: DbPlaylistFile): ApiPlaylistFile => {
+      const base = toApiPlaylistFileBase(pf);
+      const fileBase = toApiFileBase(pf.file);
+      const file: ApiFile | null = fileBase
+        ? { ...fileBase, signedUrl: signedUrlByKey.get(fileBase.fileKey) ?? null }
+        : null;
+
+      return {
+        ...base,
+        file,
+        subPlaylist: null,
+      };
+    };
+
+    const enrichedPlaylistFiles: ApiPlaylistFile[] = playlistFilesRaw.map((pf) => {
+      const top = mapPfToApi(pf);
+
+      if (!pf.isSubPlaylist || pf.subPlaylistId == null) return top;
+
+      const subId = Number(pf.subPlaylistId);
+      const sub = subPlaylistById.get(subId);
+      if (!sub) return top;
+
+      const subFiles = subFilesByPlaylistId.get(subId) ?? [];
+      const subApiFiles: ApiPlaylistFile[] = subFiles.map((spf) => {
+        const api = mapPfToApi(spf);
+        return { ...api, subPlaylist: null };
+      });
+
+      return {
+        ...top,
+        subPlaylist: {
+          id: sub.id,
+          name: sub.name,
+          defaultDuration: sub.defaultDuration,
+          playlistFiles: subApiFiles,
+        },
+      };
+    });
+
+    return reply.status(200).send({
+      playlist: {
+        id: playlist.id,
+        name: playlist.name,
+        defaultDuration: playlist.defaultDuration,
+        playlistFiles: enrichedPlaylistFiles,
+      },
+    });
   } catch (e) {
     const { status, payload } = toHttpError(e);
     return reply.status(status).send(payload);
   }
 };
-
 
 export const createPlayLog = async (
   req: FastifyRequest<{ Params: CreatePlayLogParams; Body: CreatePlayLogBody }>,

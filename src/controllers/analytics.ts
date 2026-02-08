@@ -2,6 +2,8 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import toHttpError from "../utils/toHttpError";
 import { prisma } from "../db/client";
+import { TopClientItem, TopPlayerItem } from "../types/types";
+import { Prisma } from "@prisma/client";
 
 const parseDateRange = (raw?: unknown) => {
   const s = typeof raw === "string" ? raw.trim() : "";
@@ -68,63 +70,40 @@ export const getAnalyticsSummary = async (
 };
 
 
-export const getTopClients = async (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => {
+export const getTopClients = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const range = parseDateRange((req.query as any)?.date);
-    const whereDate = range
-      ? { createdAt: { gte: range.start, lte: range.end } }
-      : {};
 
-    const rows = await prisma.playLog.groupBy({
-      by: ["fileId"],
-      where: whereDate,
-      _count: { fileId: true },
-      orderBy: { _count: { fileId: "desc" } },
-    });
+    const dateJoin = range
+      ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
+      : Prisma.empty;
 
-    if (!rows.length)
-      return reply
-        .status(200)
-        .send({ message: "Top clients fetched", items: [] });
+    const itemsRaw = await prisma.$queryRaw<
+      { folderId: number; folderName: string; adsPlayed: bigint }[]
+    >(Prisma.sql`
+      SELECT
+        fo."id" as "folderId",
+        fo."name" as "folderName",
+        COUNT(pl."id")::bigint as "adsPlayed"
+      FROM "Folders" fo
+      LEFT JOIN "Files" f
+        ON f."folderId" = fo."id"
+       AND f."isDeleted" = false
+      LEFT JOIN "PlayLogs" pl
+        ON pl."fileId" = f."id"
+        ${dateJoin}
+      WHERE
+        fo."isDeleted" = false
+      GROUP BY fo."id", fo."name"
+      ORDER BY "adsPlayed" DESC, fo."name" ASC
+      LIMIT 4
+    `);
 
-    const fileIds = rows.map((r) => r.fileId);
-    const files = await prisma.file.findMany({
-      where: { id: { in: fileIds } },
-      select: {
-        id: true,
-        folderId: true,
-        folder: { select: { id: true, name: true, isDeleted: true } },
-      },
-    });
-
-    const countByFileId = new Map<number, number>();
-    for (const r of rows) countByFileId.set(r.fileId, r._count?.fileId ?? 0);
-
-    const countByFolderId = new Map<
-      number,
-      { folderId: number; folderName: string; adsPlayed: number }
-    >();
-
-    for (const f of files) {
-      const folderId = f.folderId;
-      if (!folderId) continue;
-      if (f.folder?.isDeleted) continue;
-
-      const folderName = f.folder?.name ?? "";
-      const c = countByFileId.get(f.id) ?? 0;
-
-      const cur = countByFolderId.get(folderId);
-      if (!cur)
-        countByFolderId.set(folderId, { folderId, folderName, adsPlayed: c });
-      else cur.adsPlayed += c;
-    }
-
-    const items = Array.from(countByFolderId.values())
-      .sort((a, b) => b.adsPlayed - a.adsPlayed)
-      .slice(0, 5);
+    const items: TopClientItem[] = itemsRaw.map((x) => ({
+      folderId: x.folderId,
+      folderName: x.folderName,
+      adsPlayed: Number(x.adsPlayed),
+    }));
 
     return reply.status(200).send({ message: "Top clients fetched", items });
   } catch (e) {
@@ -133,40 +112,34 @@ export const getTopClients = async (
   }
 };
 
-export const getTopPlayers = async (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => {
+export const getTopPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const range = parseDateRange((req.query as any)?.date);
-    const whereDate = range
-      ? { createdAt: { gte: range.start, lte: range.end } }
-      : {};
 
-    const rows = await prisma.playLog.groupBy({
-      by: ["playerId"],
-      where: { ...whereDate, playerId: { not: null } },
-      _count: { playerId: true },
-      orderBy: { _count: { playerId: "desc" } },
-      take: 5,
-    });
+    const dateJoin = range
+      ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
+      : Prisma.empty;
 
-    const ids = rows
-      .map((r) => r.playerId)
-      .filter((x): x is number => typeof x === "number");
-    const players = ids.length
-      ? await prisma.player.findMany({
-          where: { id: { in: ids } },
-          select: { id: true, name: true },
-        })
-      : [];
+    const itemsRaw = await prisma.$queryRaw<
+      { playerId: number; playerName: string; adsPlayed: bigint }[]
+    >(Prisma.sql`
+      SELECT
+        p."id" as "playerId",
+        p."name" as "playerName",
+        COUNT(pl."id")::bigint as "adsPlayed"
+      FROM "Players" p
+      LEFT JOIN "PlayLogs" pl
+        ON pl."playerId" = p."id"
+        ${dateJoin}
+      GROUP BY p."id", p."name"
+      ORDER BY "adsPlayed" DESC, p."name" ASC
+      LIMIT 5
+    `);
 
-    const nameById = new Map(players.map((p) => [p.id, p.name]));
-
-    const items = rows.map((r) => ({
-      playerId: Number(r.playerId),
-      playerName: nameById.get(Number(r.playerId)) ?? "Unknown",
-      adsPlayed: r._count?.playerId ?? 0,
+    const items: TopPlayerItem[] = itemsRaw.map((x) => ({
+      playerId: x.playerId,
+      playerName: x.playerName,
+      adsPlayed: Number(x.adsPlayed),
     }));
 
     return reply.status(200).send({ message: "Top players fetched", items });

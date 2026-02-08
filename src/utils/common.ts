@@ -32,4 +32,11 @@ const toNullableInt = (v: unknown) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-export { parseDateMaybe, compare, toTopLevelType, topType, diffSec, toNullableInt };
+const formatTime = (d: Date) =>
+  new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+
+export { parseDateMaybe, compare, toTopLevelType, topType, diffSec, toNullableInt, formatTime };
