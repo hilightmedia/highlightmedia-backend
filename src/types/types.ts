@@ -188,3 +188,62 @@ export type ApiPlaylist = {
 
 export type TopClientItem = { folderId: number; folderName: string; adsPlayed: number };
 export type TopPlayerItem = { playerId: number; playerName: string; adsPlayed: number };
+
+
+export type FolderLogSortBy = "lastPlayed" | "totalRunTime" | "devices" | "plays" | "name";
+export type FolderLogItem = {
+  folderId: number;
+  folderName: string;
+  thumbnail: string;
+  lastPlayedAt: Date | null;
+  totalRunTimeSec: number;
+  devices: number;
+  plays: number;
+};
+
+export type FileLogSortBy = "lastPlayed" | "totalRunTime" | "devices" | "plays" | "name";
+
+export type FileLogItem = {
+  fileId: number;
+  fileName: string;
+  fileType: string;
+  folderId: number;
+  folderName: string;
+  signedUrl: string;
+  lastPlayedAt: Date | null;
+  totalRunTimeSec: number;
+  devices: number;
+  plays: number;
+};
+
+export type PlaylistFileLogSortBy = "lastPlayed" | "totalRunTime" | "devices" | "plays" | "name";
+
+export type PlaylistFileLogItem = {
+  playlistFileId: number;
+  playlistId: number;
+  playlistName: string;
+  playOrder: number;
+  isSubPlaylist: boolean;
+  fileId: number | null;
+  fileName: string | null;
+  fileType: string | null;
+  signedUrl: string;
+  subPlaylistId: number | null;
+  subPlaylistName: string | null;
+  lastPlayedAt: Date | null;
+  totalRunTimeSec: number;
+  devices: number;
+  plays: number;
+};
+
+
+export type PlaylistLogSortBy = "lastPlayed" | "totalRunTime" | "devices" | "plays" | "name";
+
+export type PlaylistLogItem = {
+  playlistId: number;
+  playlistName: string;
+  lastPlayedAt: Date | null;
+  totalRunTimeSec: number;
+  devices: number;
+  plays: number;
+};
