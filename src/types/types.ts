@@ -247,3 +247,11 @@ export type PlaylistLogItem = {
   devices: number;
   plays: number;
 };
+
+export type BulkAddFilesToPlaylistsBody = {
+  fileIds: number[];
+  playlistIds: number[];
+  duration?: number;
+};
+
+

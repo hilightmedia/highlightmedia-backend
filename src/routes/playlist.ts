@@ -6,15 +6,26 @@ import {
   addToPlaylist,
   bulkAddFilesToPlaylist,
   bulkAddSubPlaylistsToPlaylist,
+  bulkDeletePlaylistFiles,
+  bulkDeletePlaylists,
+  bulkEditPlaylistFileDuration,
   createPlaylist,
   deletePlaylist,
   deletePlaylistFile,
   editPlaylist,
+  editPlaylistFileDuration,
   getPlayList,
   getPlaylistById,
   getPlaylistOnly,
   movePlaylistFile,
 } from "../controllers/playlist";
+import {
+  bulkDeletePlaylistFilesSchema,
+  bulkDeletePlaylistsSchema,
+  bulkEditPlaylistFileDurationSchema,
+  editPlaylistFileDurationSchema,
+} from "../schemas/playlist";
+import { bulkAddFilesToMultiplePlaylists } from "../controllers/media";
 
 export default async function playlistRoutes(app: FastifyInstance) {
   // Get all playlists
@@ -37,7 +48,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    createPlaylist
+    createPlaylist,
   );
 
   // Add file to playlist
@@ -57,7 +68,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    addToPlaylist
+    addToPlaylist,
   );
 
   // Add sub-playlist to playlist
@@ -76,7 +87,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    addSubPlaylist
+    addSubPlaylist,
   );
 
   // Move playlist item (file/sub-playlist) by playOrder
@@ -95,7 +106,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    movePlaylistFile
+    movePlaylistFile,
   );
 
   app.get("/:playlistId", { preHandler: [authGuard] }, getPlaylistById);
@@ -113,7 +124,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    deletePlaylistFile
+    deletePlaylistFile,
   );
   app.delete(
     "/:playlistId",
@@ -129,7 +140,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    deletePlaylist
+    deletePlaylist,
   );
   app.post(
     "/:playlistId/bulk-add-files",
@@ -156,7 +167,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    bulkAddFilesToPlaylist
+    bulkAddFilesToPlaylist,
   );
 
   app.post(
@@ -184,7 +195,7 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    bulkAddSubPlaylistsToPlaylist
+    bulkAddSubPlaylistsToPlaylist,
   );
 
   app.post(
@@ -209,7 +220,29 @@ export default async function playlistRoutes(app: FastifyInstance) {
       },
       preHandler: [authGuard],
     },
-    editPlaylist
+    editPlaylist,
+  );
+
+  app.post(
+    "/bulk/add-files-to-multiple-playlists",
+    bulkDeletePlaylistsSchema,
+    bulkAddFilesToMultiplePlaylists,
+  );
+
+  app.post("/bulk-delete", bulkDeletePlaylistsSchema, bulkDeletePlaylists);
+  app.post(
+    "/bulk-edit-duration",
+    bulkEditPlaylistFileDurationSchema,
+    bulkEditPlaylistFileDuration,
+  );
+  app.post(
+    "/bulk-delete-files",
+    bulkDeletePlaylistFilesSchema,
+    bulkDeletePlaylistFiles,
+  );
+  app.post(
+    "/playlistFile/:playlistFileId/edit-duration",
+    editPlaylistFileDurationSchema,
+    editPlaylistFileDuration,
   );
 }
-

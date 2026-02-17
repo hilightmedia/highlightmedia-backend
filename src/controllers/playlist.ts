@@ -1089,3 +1089,289 @@ export const bulkAddFilesToPlaylist = async (
     return reply.status(status).send(payload);
   }
 };
+
+export const bulkDeletePlaylists = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const body = req.body as { playlistIds: any };
+    const raw = Array.isArray(body.playlistIds) ? body.playlistIds : [];
+    const playlistIds = Array.from(
+      new Set(raw.map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+    );
+
+    if (!playlistIds.length) {
+      return reply.status(400).send({ message: "Invalid playlistIds" });
+    }
+
+    const playlists = await prisma.playlist.findMany({
+      where: { id: { in: playlistIds } },
+      select: { id: true, name: true },
+    });
+
+    if (!playlists.length) {
+      return reply.status(404).send({ message: "No playlists found" });
+    }
+
+    const idsToDelete = playlists.map((p) => p.id);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.playlistFile.deleteMany({
+        where: { playlistId: { in: idsToDelete } },
+      });
+      await tx.playlist.deleteMany({ where: { id: { in: idsToDelete } } });
+    });
+
+    return reply.status(200).send({
+      message: "Playlists deleted successfully",
+      deletedCount: idsToDelete.length,
+      deletedIds: idsToDelete,
+    });
+  } catch (e) {
+    console.log("Bulk delete playlists error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export const bulkDeletePlaylistFiles = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const body = req.body as { playlistFileIds: any };
+
+    const raw = Array.isArray(body.playlistFileIds) ? body.playlistFileIds : [];
+    const playlistFileIds = Array.from(
+      new Set(raw.map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+    );
+
+    if (!playlistFileIds.length) {
+      return reply.status(400).send({ message: "Invalid playlistFileIds" });
+    }
+
+    const items = await prisma.playlistFile.findMany({
+      where: { id: { in: playlistFileIds } },
+      select: { id: true, playlistId: true, playOrder: true },
+    });
+
+    if (!items.length) {
+      return reply.status(404).send({ message: "No playlist items found" });
+    }
+
+    const idsToDelete = items.map((i) => i.id);
+
+    const byPlaylist = new Map<number, number[]>();
+    for (const it of items) {
+      const list = byPlaylist.get(it.playlistId) ?? [];
+      list.push(it.playOrder);
+      byPlaylist.set(it.playlistId, list);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.playlistFile.deleteMany({ where: { id: { in: idsToDelete } } });
+
+      for (const [playlistId, orders] of byPlaylist.entries()) {
+        const uniqueOrders = Array.from(new Set(orders)).sort((a, b) => a - b);
+        if (!uniqueOrders.length) continue;
+
+        let prev = uniqueOrders[0];
+        let runLen = 1;
+        const ranges: Array<{ start: number; end: number; count: number }> = [];
+
+        for (let i = 1; i < uniqueOrders.length; i++) {
+          const cur = uniqueOrders[i];
+          if (cur === prev + 1) {
+            runLen++;
+          } else {
+            ranges.push({ start: prev - runLen + 1, end: prev, count: runLen });
+            runLen = 1;
+          }
+          prev = cur;
+        }
+        ranges.push({ start: prev - runLen + 1, end: prev, count: runLen });
+
+        let deletedSoFar = 0;
+        for (const r of ranges) {
+          deletedSoFar += r.count;
+          await tx.playlistFile.updateMany({
+            where: {
+              playlistId,
+              playOrder: { gt: r.end },
+            },
+            data: { playOrder: { decrement: r.count } },
+          });
+        }
+      }
+    });
+
+    return reply.status(200).send({
+      message: "Playlist items deleted successfully",
+      deletedCount: idsToDelete.length,
+      deletedIds: idsToDelete,
+    });
+  } catch (e) {
+    console.log("Bulk delete playlist files error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export const bulkEditPlaylistFileDuration = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const body = req.body as { playlistFileIds: any; duration: any };
+
+    const raw = Array.isArray(body.playlistFileIds) ? body.playlistFileIds : [];
+    const playlistFileIds = Array.from(
+      new Set(raw.map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+    );
+
+    const duration = Number(body.duration);
+
+    if (!playlistFileIds.length) {
+      return reply.status(400).send({ message: "Invalid playlistFileIds" });
+    }
+
+    if (
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      duration > 24 * 60 * 60
+    ) {
+      return reply
+        .status(400)
+        .send({ message: "Invalid duration (must be 1..86400 seconds)" });
+    }
+
+    const rows = await prisma.playlistFile.findMany({
+      where: { id: { in: playlistFileIds } },
+      select: {
+        id: true,
+        isSubPlaylist: true,
+        subPlaylistId: true,
+        file: { select: { fileType: true } },
+      },
+    });
+
+    if (!rows.length) {
+      return reply.status(404).send({ message: "No playlist files found" });
+    }
+
+    const idsToUpdate = rows
+      .filter((r) => {
+        if (r.isSubPlaylist) return false;
+        const ft = (r.file?.fileType ?? "").toLowerCase();
+        return !ft.startsWith("video/");
+      })
+      .map((r) => r.id);
+
+    if (!idsToUpdate.length) {
+      return reply.status(200).send({
+        message: "Playlist file durations updated successfully",
+        updatedCount: 0,
+        updatedIds: [],
+        duration,
+      });
+    }
+
+    const result = await prisma.playlistFile.updateMany({
+      where: { id: { in: idsToUpdate } },
+      data: { duration },
+    });
+
+    return reply.status(200).send({
+      message: "Playlist file durations updated successfully",
+      updatedCount: result.count,
+      updatedIds: idsToUpdate,
+      duration,
+    });
+  } catch (e) {
+    console.log("Bulk edit playlist file duration error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export const editPlaylistFileDuration = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const { playlistFileId } = req.params as { playlistFileId: any };
+    const id = Number(playlistFileId);
+
+    const body = req.body as { duration: any };
+    const duration = Number(body.duration);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return reply.status(400).send({ message: "Invalid playlistFileId" });
+    }
+
+    if (
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      duration > 24 * 60 * 60
+    ) {
+      return reply
+        .status(400)
+        .send({ message: "Invalid duration (must be 1..86400 seconds)" });
+    }
+
+    const row = await prisma.playlistFile.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        playlistId: true,
+        duration: true,
+        isSubPlaylist: true,
+        file: { select: { fileType: true } },
+      },
+    });
+
+    if (!row) {
+      return reply.status(404).send({ message: "Playlist item not found" });
+    }
+
+    if (row.isSubPlaylist) {
+      return reply.status(200).send({
+        message: "Playlist file duration update skipped",
+        skipped: true,
+        reason: "subPlaylist",
+        playlistFileId: row.id,
+      });
+    }
+
+    const ft = (row.file?.fileType ?? "").toLowerCase();
+    if (ft.startsWith("video/")) {
+      return reply.status(200).send({
+        message: "Playlist file duration update skipped",
+        skipped: true,
+        reason: "video",
+        playlistFileId: row.id,
+      });
+    }
+
+    const updated = await prisma.playlistFile.update({
+      where: { id: row.id },
+      data: { duration },
+      select: { id: true, playlistId: true, duration: true },
+    });
+
+    return reply.status(200).send({
+      message: "Playlist file duration updated successfully",
+      skipped: false,
+      playlistFile: {
+        playlistFileId: updated.id,
+        playlistId: updated.playlistId,
+        duration: updated.duration,
+      },
+    });
+  } catch (e) {
+    console.log("Edit playlist file duration error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};

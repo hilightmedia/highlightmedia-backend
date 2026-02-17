@@ -1,6 +1,8 @@
 import { FastifyInstance } from "fastify";
 import {
+  bulkAddFilesToMultiplePlaylists,
   bulkDeleteFile,
+  bulkEditValidity,
   bulkFolderDelete,
   createFolder,
   deleteFile,
@@ -14,6 +16,7 @@ import {
   uploadMedia,
 } from "../controllers/media";
 import { authGuard } from "../services/authGuard";
+import { bulkAddFilesToMultiplePlaylistsSchema, bulkEditValiditySchema } from "../schemas/media";
 
 export default async function mediaRoutes(app: FastifyInstance) {
   app.get("/folders", { preHandler: [authGuard] }, getClientFolders);
@@ -195,5 +198,15 @@ app.post(
       },
     },
     getFolderFiles,
+  );
+  
+  app.post("/bulk/update-folders",
+    bulkEditValiditySchema,
+    bulkEditValidity,
+  );
+  app.post(
+    "/bulk-add-files-to-playlists",
+    bulkAddFilesToMultiplePlaylistsSchema,
+    bulkAddFilesToMultiplePlaylists,
   );
 }

@@ -3,6 +3,7 @@ import { prisma } from "../db/client";
 import { FastifyReply, FastifyRequest } from "fastify";
 import { generateSignedUrl, handleUpload } from "../services/file";
 import {
+  BulkAddFilesToPlaylistsBody,
   MediaStatus,
   SizeBucket,
   SortBy,
@@ -270,7 +271,6 @@ export async function getClientFolders(
     return reply.status(status).send(payload);
   }
 }
-
 
 export const createFolder = async (
   req: FastifyRequest,
@@ -721,7 +721,6 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
   }
 };
 
-
 export const editFileName = async (
   req: FastifyRequest,
   reply: FastifyReply,
@@ -925,7 +924,13 @@ export const getFolderFiles = async (
 
     const files = await prisma.file.findMany({
       where: { folderId: id, isDeleted: false }, // ✅ use id (number)
-      select: { id: true, name: true, fileType: true, fileKey: true,duration: true },
+      select: {
+        id: true,
+        name: true,
+        fileType: true,
+        fileKey: true,
+        duration: true,
+      },
     });
 
     const fileUrlUpdate = await Promise.all(
@@ -945,3 +950,149 @@ export const getFolderFiles = async (
     return reply.status(status).send(payload);
   }
 };
+
+export const bulkEditValidity = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const { folderIds, validityStart, validityEnd } = req.body as {
+      folderIds: number[];
+      validityStart?: Date;
+      validityEnd?: Date;
+    };
+    const ids = Array.isArray(folderIds)
+      ? folderIds.map(Number).filter(Number.isFinite)
+      : [];
+    if (ids.length === 0)
+      return reply.status(400).send({ message: "Invalid folderIds" });
+
+    const folders = await prisma.folder.findMany({
+      where: { id: { in: ids }, isDeleted: false },
+      select: { id: true },
+    });
+    if (folders.length === 0)
+      return reply.status(404).send({ message: "Folders not found" });
+
+    await prisma.folder.updateMany({
+      where: { id: { in: ids }, isDeleted: false },
+      data: {
+        validityStart: validityStart ? new Date(validityStart) : null,
+        validityEnd: validityEnd ? new Date(validityEnd) : null,
+      },
+    });
+
+    return reply
+      .status(200)
+      .send({ message: "Folder validity updated successfully" });
+  } catch (e) {
+    console.log("Bulk edit validity error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export async function bulkAddFilesToMultiplePlaylists(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const body = req.body as {
+    fileIds: number[];
+    playlistIds: number[];
+    duration?: number;
+  };
+  const fileIds = Array.from(
+    new Set((body.fileIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+  );
+  const playlistIds = Array.from(
+    new Set((body.playlistIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+  );
+
+  if (!fileIds.length || !playlistIds.length) {
+    return reply.code(400).send({ success: false, message: "fileIds and playlistIds are required" });
+  }
+
+  const durationOverride =
+    typeof body.duration === "number" && body.duration > 0 ? Math.floor(body.duration) : null;
+
+  const files = await prisma.file.findMany({
+    where: { id: { in: fileIds }, isDeleted: false },
+    select: { id: true },
+  });
+  const validFileIds = files.map((f) => f.id);
+  if (!validFileIds.length) {
+    return reply.code(400).send({ success: false, message: "No valid files found" });
+  }
+
+  const playlists = await prisma.playlist.findMany({
+    where: { id: { in: playlistIds } },
+    select: { id: true, defaultDuration: true },
+  });
+  if (!playlists.length) {
+    return reply.code(404).send({ success: false, message: "No playlists found" });
+  }
+
+  const playlistDefault = new Map<number, number>();
+  for (const p of playlists) playlistDefault.set(p.id, p.defaultDuration);
+
+
+
+  const maxOrders = await prisma.playlistFile.groupBy({
+    by: ["playlistId"],
+    where: { playlistId: { in: playlists.map((p) => p.id) } },
+    _max: { playOrder: true },
+  });
+
+  const baseOrder = new Map<number, number>();
+  for (const row of maxOrders) baseOrder.set(row.playlistId, row._max.playOrder ?? 0);
+  for (const p of playlists) if (!baseOrder.has(p.id)) baseOrder.set(p.id, 0);
+
+  const counters = new Map<number, number>();
+  for (const p of playlists) counters.set(p.id, 0);
+
+  const createData: Array<{
+    playlistId: number;
+    fileId: number;
+    subPlaylistId: null;
+    isSubPlaylist: boolean;
+    duration: number;
+    playOrder: number;
+  }> = [];
+
+  for (const pid of playlists.map((p) => p.id)) {
+    for (const fid of validFileIds) {
+      const key = `${pid}:${fid}`;
+
+      const i = (counters.get(pid) ?? 0) + 1;
+      counters.set(pid, i);
+
+      createData.push({
+        playlistId: pid,
+        fileId: fid,
+        subPlaylistId: null,
+        isSubPlaylist: false,
+        duration: durationOverride ?? (playlistDefault.get(pid) ?? 30),
+        playOrder: (baseOrder.get(pid) ?? 0) + i,
+      });
+    }
+  }
+
+  if (!createData.length) {
+    return reply.send({
+      success: true,
+      inserted: 0,
+      skipped: playlists.length * validFileIds.length,
+    });
+  }
+
+  const result = await prisma.playlistFile.createMany({
+    data: createData,
+    skipDuplicates: true,
+  });
+
+  return reply.send({
+    success: true,
+    inserted: result.count,
+    skipped: playlists.length * validFileIds.length - result.count,
+  });
+}

@@ -375,8 +375,3 @@ export const getActivity = async (req: FastifyRequest, reply: FastifyReply) => {
   }
 };
 
-
-
-export const getPlayerLogs = (req: FastifyRequest, reply: FastifyReply) => {
-  
-}
