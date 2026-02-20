@@ -1096,3 +1096,47 @@ export async function bulkAddFilesToMultiplePlaylists(
     skipped: playlists.length * validFileIds.length - result.count,
   });
 }
+
+export const getAlerts = async (req: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const q = (req.query ?? {}) as { offset?: string | number; limit?: string | number };
+
+    const offset = Math.max(0, Number(q.offset ?? 0));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 10)));
+
+    const total = await prisma.alert.count();
+
+    const take = Math.min(500, offset + limit);
+
+    const rows = await prisma.alert.findMany({
+      orderBy: { at: "desc" },
+      take,
+      include: { folder: { select: { id: true, name: true } } },
+    });
+
+    const items = rows.slice(offset, offset + limit).map((a) => ({
+      id: `alert:${a.id}`,
+      type: a.type,
+      folderId: a.folder?.id ?? a.folderId,
+      folderName: a.folder?.name ?? "Unknown",
+      at: a.at,
+      message: a.message,
+      daysLeft: a.daysLeft ?? null,
+    }));
+
+    const hasMore = offset + limit < total;
+
+    return reply.status(200).send({
+      alerts: items,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore,
+      },
+    });
+  } catch (e) {
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};

@@ -9,6 +9,7 @@ import {
   deleteFolder,
   editFileName,
   editFolder,
+  getAlerts,
   getClientFolders,
   getClients,
   getFolderFiles,
@@ -16,7 +17,7 @@ import {
   uploadMedia,
 } from "../controllers/media";
 import { authGuard } from "../services/authGuard";
-import { bulkAddFilesToMultiplePlaylistsSchema, bulkEditValiditySchema } from "../schemas/media";
+import { bulkAddFilesToMultiplePlaylistsSchema, bulkEditValiditySchema, getAlertsSchema } from "../schemas/media";
 
 export default async function mediaRoutes(app: FastifyInstance) {
   app.get("/folders", { preHandler: [authGuard] }, getClientFolders);
@@ -209,4 +210,6 @@ app.post(
     bulkAddFilesToMultiplePlaylistsSchema,
     bulkAddFilesToMultiplePlaylists,
   );
+
+  app.get("/get-alerts", getAlertsSchema, getAlerts);
 }

@@ -87,43 +87,74 @@ export const getAnalyticsSummary = async (
   }
 };
 
-export const getTopClients = async (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => {
+export const getTopClients = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const range = parseDateRange((req.query as any)?.date);
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
 
     const dateJoin = range
       ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
       : Prisma.empty;
 
     const itemsRaw = await prisma.$queryRaw<
-      { folderId: number; folderName: string; adsPlayed: bigint }[]
+      { folderId: number; folderName: string; adsPlayed: bigint; sortOrder: number }[]
     >(Prisma.sql`
-      SELECT
-        fo."id" as "folderId",
-        fo."name" as "folderName",
-        COUNT(pl."id")::bigint as "adsPlayed"
-      FROM "Folders" fo
-      LEFT JOIN "Files" f
-        ON f."folderId" = fo."id"
-       AND f."isDeleted" = false
-      LEFT JOIN "PlayLogs" pl
-        ON pl."fileId" = f."id"
-        ${dateJoin}
-      WHERE
-        fo."isDeleted" = false
-      GROUP BY fo."id", fo."name"
-      ORDER BY "adsPlayed" DESC, fo."name" ASC
-      LIMIT 4
+      WITH folder_device_counts AS (
+        SELECT
+          fo."id" as "folderId",
+          fo."name" as "folderName",
+          COUNT(DISTINCT pl."playerId")::bigint as "deviceCount"
+        FROM "Folders" fo
+        LEFT JOIN "Files" f
+          ON f."folderId" = fo."id"
+         AND f."isDeleted" = false
+        LEFT JOIN "PlayLogs" pl
+          ON pl."fileId" = f."id"
+         AND pl."playerId" IS NOT NULL
+          ${dateJoin}
+        WHERE
+          fo."isDeleted" = false
+        GROUP BY fo."id", fo."name"
+      ),
+      ranked AS (
+        SELECT
+          "folderId",
+          "folderName",
+          "deviceCount",
+          ROW_NUMBER() OVER (ORDER BY "deviceCount" DESC, "folderName" ASC) as rn
+        FROM folder_device_counts
+      ),
+      top5 AS (
+        SELECT
+          "folderId",
+          "folderName",
+          "deviceCount" as "adsPlayed",
+          0 as "sortOrder"
+        FROM ranked
+        WHERE rn <= 5
+      ),
+      others AS (
+        SELECT
+          0 as "folderId",
+          'Others' as "folderName",
+          COALESCE(SUM("deviceCount"), 0)::bigint as "adsPlayed",
+          1 as "sortOrder"
+        FROM ranked
+        WHERE rn > 5
+      )
+      SELECT * FROM top5
+      UNION ALL
+      SELECT * FROM others
+      ORDER BY "sortOrder" ASC, "adsPlayed" DESC, "folderName" ASC
     `);
 
-    const items: TopClientItem[] = itemsRaw.map((x) => ({
-      folderId: x.folderId,
-      folderName: x.folderName,
-      adsPlayed: Number(x.adsPlayed),
-    }));
+    const items: TopClientItem[] = itemsRaw
+      .filter((x) => !(x.folderId === 0 && Number(x.adsPlayed) === 0))
+      .map((x) => ({
+        folderId: x.folderId,
+        folderName: x.folderName,
+        adsPlayed: Number(x.adsPlayed),
+      }));
 
     return reply.status(200).send({ message: "Top clients fetched", items });
   } catch (e) {
@@ -138,32 +169,70 @@ export const getTopPlayers = async (
 ) => {
   try {
     const range = parseDateRange((req.query as any)?.date);
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
-    const dateJoin = range
-      ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
-      : Prisma.empty;
+    const dateJoin = Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`;
 
     const itemsRaw = await prisma.$queryRaw<
-      { playerId: number; playerName: string; adsPlayed: bigint }[]
+      { playerId: number; playerName: string; adsPlayed: bigint; sortOrder: number }[]
     >(Prisma.sql`
-      SELECT
-        p."id" as "playerId",
-        p."name" as "playerName",
-        COUNT(pl."id")::bigint as "adsPlayed"
-      FROM "Players" p
-      LEFT JOIN "PlayLogs" pl
-        ON pl."playerId" = p."id"
-        ${dateJoin}
-      GROUP BY p."id", p."name"
-      ORDER BY "adsPlayed" DESC, p."name" ASC
-      LIMIT 5
+      WITH player_folder_counts AS (
+        SELECT
+          p."id" as "playerId",
+          p."name" as "playerName",
+          COUNT(DISTINCT f."folderId")::bigint as "folderCount"
+        FROM "Players" p
+        LEFT JOIN "PlayLogs" pl
+          ON pl."playerId" = p."id"
+          ${dateJoin}
+        LEFT JOIN "Files" f
+          ON f."id" = pl."fileId"
+         AND f."isDeleted" = false
+        LEFT JOIN "Folders" fo
+          ON fo."id" = f."folderId"
+         AND fo."isDeleted" = false
+        GROUP BY p."id", p."name"
+      ),
+      ranked AS (
+        SELECT
+          "playerId",
+          "playerName",
+          "folderCount",
+          ROW_NUMBER() OVER (ORDER BY "folderCount" DESC, "playerName" ASC) as rn
+        FROM player_folder_counts
+      ),
+      top5 AS (
+        SELECT
+          "playerId",
+          "playerName",
+          "folderCount" as "adsPlayed",
+          0 as "sortOrder"
+        FROM ranked
+        WHERE rn <= 5
+      ),
+      others AS (
+        SELECT
+          0 as "playerId",
+          'Others' as "playerName",
+          COALESCE(SUM("folderCount"), 0)::bigint as "adsPlayed",
+          1 as "sortOrder"
+        FROM ranked
+        WHERE rn > 5
+      )
+      SELECT * FROM top5
+      UNION ALL
+      SELECT * FROM others
+      ORDER BY "sortOrder" ASC, "adsPlayed" DESC, "playerName" ASC
     `);
 
-    const items: TopPlayerItem[] = itemsRaw.map((x) => ({
-      playerId: x.playerId,
-      playerName: x.playerName,
-      adsPlayed: Number(x.adsPlayed),
-    }));
+    const items: TopPlayerItem[] = itemsRaw
+      .filter((x) => !(x.playerId === 0 && Number(x.adsPlayed) === 0))
+      .map((x) => ({
+        playerId: x.playerId,
+        playerName: x.playerName,
+        adsPlayed: Number(x.adsPlayed),
+      }));
 
     return reply.status(200).send({ message: "Top players fetched", items });
   } catch (e) {
@@ -179,6 +248,9 @@ export const getRecentPlayerSessions = async (
   try {
     const q = (req.query as any) ?? {};
     const range = parseDateRange(q.date);
+
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy = typeof q.sortBy === "string" ? q.sortBy : "lastActive";
     const sortOrder = q.sortOrder === "asc" ? "asc" : "desc";
@@ -265,6 +337,8 @@ export const getFolderLogs = async (
     const q = (req.query ?? {}) as any;
 
     const range = parseDateRange(q?.date);
+
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: FolderLogSortBy =
       (q?.sortBy as FolderLogSortBy) ?? "lastPlayed";
@@ -413,12 +487,13 @@ export const getFolderLogs = async (
   }
 };
 
-
 export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const q = (req.query ?? {}) as any;
 
     const range = parseDateRange(q?.date);
+
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: FileLogSortBy = (q?.sortBy as FileLogSortBy) ?? "lastPlayed";
     const sortOrder: SortOrder = (q?.sortOrder as SortOrder) ?? "desc";
@@ -427,7 +502,9 @@ export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
     const limit = Math.min(100, Math.max(1, Number(q?.limit ?? 10)));
 
     const searchTerm =
-      typeof q?.search === "string" && q.search.trim().length > 0 ? q.search.trim() : null;
+      typeof q?.search === "string" && q.search.trim().length > 0
+        ? q.search.trim()
+        : null;
 
     const whereDate = range
       ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
@@ -438,12 +515,17 @@ export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
       : Prisma.empty;
 
     const orderExpr = (() => {
-      const dir = String(sortOrder).toLowerCase() === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const dir =
+        String(sortOrder).toLowerCase() === "asc"
+          ? Prisma.sql`ASC`
+          : Prisma.sql`DESC`;
 
       if (sortBy === "name") return Prisma.sql`f."name" ${dir}`;
       if (sortBy === "plays") return Prisma.sql`"plays" ${dir}, f."name" ASC`;
-      if (sortBy === "devices") return Prisma.sql`"devices" ${dir}, f."name" ASC`;
-      if (sortBy === "totalRunTime") return Prisma.sql`"totalRunTimeSec" ${dir}, f."name" ASC`;
+      if (sortBy === "devices")
+        return Prisma.sql`"devices" ${dir}, f."name" ASC`;
+      if (sortBy === "totalRunTime")
+        return Prisma.sql`"totalRunTimeSec" ${dir}, f."name" ASC`;
 
       return Prisma.sql`"lastPlayedAt" ${dir} NULLS LAST, f."name" ASC`;
     })();
@@ -545,7 +627,9 @@ export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
         sortBy,
         sortOrder,
         search: searchTerm,
-        date: range ? { start: range.start.toISOString(), end: range.end.toISOString() } : null,
+        date: range
+          ? { start: range.start.toISOString(), end: range.end.toISOString() }
+          : null,
       },
     });
   } catch (e) {
@@ -554,20 +638,28 @@ export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
   }
 };
 
-export const getPlaylistFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
+export const getPlaylistFileLogs = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
     const q = (req.query ?? {}) as any;
 
     const range = parseDateRange(q?.date);
 
-    const sortBy: PlaylistFileLogSortBy = (q?.sortBy as PlaylistFileLogSortBy) ?? "lastPlayed";
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+
+    const sortBy: PlaylistFileLogSortBy =
+      (q?.sortBy as PlaylistFileLogSortBy) ?? "lastPlayed";
     const sortOrder: SortOrder = (q?.sortOrder as SortOrder) ?? "desc";
 
     const offset = Math.max(0, Number(q?.offset ?? 0));
     const limit = Math.min(100, Math.max(1, Number(q?.limit ?? 10)));
 
     const searchTerm =
-      typeof q?.search === "string" && q.search.trim().length > 0 ? q.search.trim() : null;
+      typeof q?.search === "string" && q.search.trim().length > 0
+        ? q.search.trim()
+        : null;
 
     const playlistId = q?.playlistId != null ? Number(q.playlistId) : null;
 
@@ -588,14 +680,19 @@ export const getPlaylistFileLogs = async (req: FastifyRequest, reply: FastifyRep
       : Prisma.empty;
 
     const orderExpr = (() => {
-      const dir = String(sortOrder).toLowerCase() === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const dir =
+        String(sortOrder).toLowerCase() === "asc"
+          ? Prisma.sql`ASC`
+          : Prisma.sql`DESC`;
 
       if (sortBy === "name")
         return Prisma.sql`COALESCE(f."name", sp."name", '') ${dir}, p."name" ASC`;
 
       if (sortBy === "plays") return Prisma.sql`"plays" ${dir}, p."name" ASC`;
-      if (sortBy === "devices") return Prisma.sql`"devices" ${dir}, p."name" ASC`;
-      if (sortBy === "totalRunTime") return Prisma.sql`"totalRunTimeSec" ${dir}, p."name" ASC`;
+      if (sortBy === "devices")
+        return Prisma.sql`"devices" ${dir}, p."name" ASC`;
+      if (sortBy === "totalRunTime")
+        return Prisma.sql`"totalRunTimeSec" ${dir}, p."name" ASC`;
 
       return Prisma.sql`"lastPlayedAt" ${dir} NULLS LAST, p."name" ASC`;
     })();
@@ -693,7 +790,7 @@ export const getPlaylistFileLogs = async (req: FastifyRequest, reply: FastifyRep
       fileId: r.fileId ?? null,
       fileName: r.fileName ?? null,
       fileType: r.fileType ?? null,
-      signedUrl: r.fileKey ? signedUrlByKey.get(r.fileKey) ?? "" : "",
+      signedUrl: r.fileKey ? (signedUrlByKey.get(r.fileKey) ?? "") : "",
       subPlaylistId: r.subPlaylistId ?? null,
       subPlaylistName: r.subPlaylistName ?? null,
       lastPlayedAt: r.lastPlayedAt ?? null,
@@ -716,7 +813,9 @@ export const getPlaylistFileLogs = async (req: FastifyRequest, reply: FastifyRep
         sortOrder,
         search: searchTerm,
         playlistId: Number.isFinite(playlistId) ? playlistId : null,
-        date: range ? { start: range.start.toISOString(), end: range.end.toISOString() } : null,
+        date: range
+          ? { start: range.start.toISOString(), end: range.end.toISOString() }
+          : null,
       },
     });
   } catch (e) {
@@ -725,20 +824,28 @@ export const getPlaylistFileLogs = async (req: FastifyRequest, reply: FastifyRep
   }
 };
 
-export const getPlaylistLogs = async (req: FastifyRequest, reply: FastifyReply) => {
+export const getPlaylistLogs = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
     const q = (req.query ?? {}) as any;
 
     const range = parseDateRange(q?.date);
 
-    const sortBy: PlaylistLogSortBy = (q?.sortBy as PlaylistLogSortBy) ?? "lastPlayed";
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+
+    const sortBy: PlaylistLogSortBy =
+      (q?.sortBy as PlaylistLogSortBy) ?? "lastPlayed";
     const sortOrder: SortOrder = (q?.sortOrder as SortOrder) ?? "desc";
 
     const offset = Math.max(0, Number(q?.offset ?? 0));
     const limit = Math.min(100, Math.max(1, Number(q?.limit ?? 10)));
 
     const searchTerm =
-      typeof q?.search === "string" && q.search.trim().length > 0 ? q.search.trim() : null;
+      typeof q?.search === "string" && q.search.trim().length > 0
+        ? q.search.trim()
+        : null;
 
     const whereDate = range
       ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
@@ -749,12 +856,17 @@ export const getPlaylistLogs = async (req: FastifyRequest, reply: FastifyReply) 
       : Prisma.empty;
 
     const orderExpr = (() => {
-      const dir = String(sortOrder).toLowerCase() === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const dir =
+        String(sortOrder).toLowerCase() === "asc"
+          ? Prisma.sql`ASC`
+          : Prisma.sql`DESC`;
 
       if (sortBy === "name") return Prisma.sql`p."name" ${dir}`;
       if (sortBy === "plays") return Prisma.sql`"plays" ${dir}, p."name" ASC`;
-      if (sortBy === "devices") return Prisma.sql`"devices" ${dir}, p."name" ASC`;
-      if (sortBy === "totalRunTime") return Prisma.sql`"totalRunTimeSec" ${dir}, p."name" ASC`;
+      if (sortBy === "devices")
+        return Prisma.sql`"devices" ${dir}, p."name" ASC`;
+      if (sortBy === "totalRunTime")
+        return Prisma.sql`"totalRunTimeSec" ${dir}, p."name" ASC`;
 
       return Prisma.sql`"lastPlayedAt" ${dir} NULLS LAST, p."name" ASC`;
     })();
@@ -820,7 +932,9 @@ export const getPlaylistLogs = async (req: FastifyRequest, reply: FastifyReply) 
         sortBy,
         sortOrder,
         search: searchTerm,
-        date: range ? { start: range.start.toISOString(), end: range.end.toISOString() } : null,
+        date: range
+          ? { start: range.start.toISOString(), end: range.end.toISOString() }
+          : null,
       },
     });
   } catch (e) {

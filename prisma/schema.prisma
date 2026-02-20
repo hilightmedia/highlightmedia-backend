@@ -31,7 +31,8 @@ model Folder {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  files File[]
+  files  File[]
+  alerts Alert[]
 
   @@map("Folders")
 }
@@ -159,4 +160,23 @@ model PlayLog {
   @@index([playlistId])
   @@index([subPlaylistId])
   @@map("PlayLogs")
+}
+
+model Alert {
+  id        Int      @id @default(autoincrement())
+  folderId  Int
+  type      String   @db.VarChar(40)
+  message   String   @db.VarChar(500)
+  at        DateTime
+  daysLeft  Int?
+  alertDate DateTime @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folder Folder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, type, alertDate])
+  @@index([at])
+  @@index([folderId])
+  @@map("Alerts")
 }

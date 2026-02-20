@@ -294,6 +294,11 @@ export const getPlaylistById = async (
                 fileSize: true,
                 updatedAt: true,
                 isDeleted: true,
+                folder:{
+                  select:{
+                    name:true,
+                  }
+                }
               },
             },
             subPlaylist: {
@@ -373,7 +378,7 @@ export const getPlaylistById = async (
     if (allFileIds.length > 0) {
       const grouped = await prisma.playLog.groupBy({
         by: ["fileId"],
-        where: { fileId: { in: allFileIds } },
+        where: { fileId: { in: allFileIds }, playlistId: id },
         _count: { _all: true },
       });
 
@@ -399,6 +404,7 @@ export const getPlaylistById = async (
             fileId: pf.fileId,
             subPlaylistId: null,
             name: pf.file.name,
+            folderName: pf.file.folder?.name ?? null,
             url,
             type: pf.file.fileType,
             duration: durationSec,
