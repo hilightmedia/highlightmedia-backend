@@ -1,3 +1,4 @@
+import { ONLINE_THRESHOLD_MS } from "../config/constants";
 import { SortOrder } from "../types/types";
 
 function parseDateMaybe(v: unknown): Date | null {
@@ -39,4 +40,99 @@ const formatTime = (d: Date) =>
     hour12: true,
   }).format(d);
 
-export { parseDateMaybe, compare, toTopLevelType, topType, diffSec, toNullableInt, formatTime };
+const parseDateRange = (raw?: unknown) => {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+
+  const start = new Date(`${s}T00:00:00.000Z`);
+  const end = new Date(`${s}T23:59:59.999Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+};
+
+const isOnline = (lastActiveAt?: Date | null, isActive?: boolean | null) => {
+  if (!isActive) return false;
+  if (!lastActiveAt) return false;
+  return Date.now() - lastActiveAt.getTime() <= ONLINE_THRESHOLD_MS;
+};
+
+const parseRange = (startDate?: string, endDate?: string) => {
+  const isValid = (v?: string) => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+  let start: Date;
+  let end: Date;
+
+  if (isValid(startDate) && isValid(endDate)) {
+    const [sy, sm, sd] = startDate!.split("-").map(Number);
+    const [ey, em, ed] = endDate!.split("-").map(Number);
+
+    start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+
+    end = new Date(ey, em - 1, ed + 1, 0, 0, 0, 0); // exclusive
+  } else {
+    const now = new Date();
+
+    start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+
+    end = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      0,
+      0,
+    );
+  }
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+    return null;
+
+  return { start, end };
+};
+    const parseLocalRange = (startDate?: string, endDate?: string) => {
+      const isValid = (v?: string) => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+      let start: Date;
+      let endExclusive: Date;
+
+      if (isValid(startDate) && isValid(endDate)) {
+        const [sy, sm, sd] = startDate!.split("-").map(Number);
+        const [ey, em, ed] = endDate!.split("-").map(Number);
+
+        start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+
+        const end = new Date(ey, em - 1, ed, 0, 0, 0, 0);
+        endExclusive = new Date(end);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+      } else {
+        const now = new Date();
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        endExclusive = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      }
+
+      return { start, end:endExclusive };
+    };
+
+
+export {
+  parseDateMaybe,
+  compare,
+  toTopLevelType,
+  topType,
+  diffSec,
+  toNullableInt,
+  formatTime,
+  isOnline,
+  parseDateRange,
+  parseRange,
+  parseLocalRange
+};

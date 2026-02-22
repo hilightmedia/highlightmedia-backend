@@ -7,7 +7,7 @@ import { compareValue, hashValue } from "../services/bycrypt";
 
 export async function createAdminUser(
   req: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   try {
     const { email, name, password } = req.body as {
@@ -68,10 +68,31 @@ export async function loginAdminUser(req: FastifyRequest, reply: FastifyReply) {
       refreshToken,
       user: payload,
     });
-
   } catch (e: any) {
     console.log("Sign Up error: ", e);
     const { status, payload } = toHttpError(e);
     return reply.status(status).send(payload);
   }
 }
+
+export const refreshToken = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const { refreshToken } = req.body as { refreshToken: string };
+    const payloadData = JwtService.verifyRefresh(refreshToken);
+    const payload = {
+      id: payloadData.id,
+      name: payloadData.name,
+      email: payloadData.email,
+    };
+    console.log("Refresh token payload: ", payload);
+    const accessToken = JwtService.signAccess(payload);
+    return reply.status(200).send({ accessToken });
+  } catch (e: any) {
+    console.log("Refresh token error: ", e);
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};

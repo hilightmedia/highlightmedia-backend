@@ -17,24 +17,7 @@ import {
 } from "../types/types";
 import { Prisma } from "@prisma/client";
 import { generateSignedUrl } from "../services/file";
-
-const parseDateRange = (raw?: unknown) => {
-  const s = typeof raw === "string" ? raw.trim() : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
-
-  const start = new Date(`${s}T00:00:00.000Z`);
-  const end = new Date(`${s}T23:59:59.999Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-  return { start, end };
-};
-
-const ONLINE_THRESHOLD_MS = 15 * 60 * 1000;
-
-const isOnline = (lastActiveAt?: Date | null, isActive?: boolean | null) => {
-  if (!isActive) return false;
-  if (!lastActiveAt) return false;
-  return Date.now() - lastActiveAt.getTime() <= ONLINE_THRESHOLD_MS;
-};
+import { isOnline, parseDateRange, parseRange } from "../utils/common";
 
 export const getAnalyticsSummary = async (
   req: FastifyRequest,
@@ -87,17 +70,26 @@ export const getAnalyticsSummary = async (
   }
 };
 
-export const getTopClients = async (req: FastifyRequest, reply: FastifyReply) => {
+export const getTopClients = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
   try {
     const range = parseDateRange((req.query as any)?.date);
-    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const dateJoin = range
       ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
       : Prisma.empty;
 
     const itemsRaw = await prisma.$queryRaw<
-      { folderId: number; folderName: string; adsPlayed: bigint; sortOrder: number }[]
+      {
+        folderId: number;
+        folderName: string;
+        adsPlayed: bigint;
+        sortOrder: number;
+      }[]
     >(Prisma.sql`
       WITH folder_device_counts AS (
         SELECT
@@ -175,7 +167,12 @@ export const getTopPlayers = async (
     const dateJoin = Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`;
 
     const itemsRaw = await prisma.$queryRaw<
-      { playerId: number; playerName: string; adsPlayed: bigint; sortOrder: number }[]
+      {
+        playerId: number;
+        playerName: string;
+        adsPlayed: bigint;
+        sortOrder: number;
+      }[]
     >(Prisma.sql`
       WITH player_folder_counts AS (
         SELECT
@@ -336,9 +333,10 @@ export const getFolderLogs = async (
   try {
     const q = (req.query ?? {}) as any;
 
-    const range = parseDateRange(q?.date);
-
-    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+    const range = parseRange(q?.startDate, q?.endDate);
+    console.log(range, "Range");
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: FolderLogSortBy =
       (q?.sortBy as FolderLogSortBy) ?? "lastPlayed";
@@ -352,88 +350,116 @@ export const getFolderLogs = async (
         ? q.search.trim()
         : null;
 
-    const whereDate = range
-      ? Prisma.sql`AND pl."createdAt" >= ${range.start} AND pl."createdAt" <= ${range.end}`
-      : Prisma.empty;
+    const logs = await prisma.playLog.findMany({
+      where: {
+        createdAt: { gte: range.start, lte: range.end },
+        file: {
+          isDeleted: false,
+          folder: {
+            isDeleted: false,
+            ...(searchTerm && {
+              name: { contains: searchTerm, mode: "insensitive" },
+            }),
+          },
+        },
+      },
+      select: {
+        playerId: true,
+        createdAt: true,
+        file: {
+          select: {
+            folderId: true,
+            folder: { select: { name: true } },
+          },
+        },
+        playlistFile: { select: { duration: true } },
+      },
+    });
 
-    const whereSearch = searchTerm
-      ? Prisma.sql`AND fo."name" ILIKE ${"%" + searchTerm + "%"}`
-      : Prisma.empty;
-
-    const orderExpr = (() => {
-      const dir =
-        sortOrder.toLowerCase() === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
-
-      if (sortBy === "name") return Prisma.sql`fo."name" ${dir}`;
-      if (sortBy === "plays") return Prisma.sql`"plays" ${dir}, fo."name" ASC`;
-      if (sortBy === "devices")
-        return Prisma.sql`"devices" ${dir}, fo."name" ASC`;
-      if (sortBy === "totalRunTime")
-        return Prisma.sql`"totalRunTimeSec" ${dir}, fo."name" ASC`;
-
-      return Prisma.sql`"lastPlayedAt" ${dir} NULLS LAST, fo."name" ASC`;
-    })();
-
-    const totalRaw = await prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`
-      SELECT COUNT(*)::bigint AS "total"
-      FROM "Folders" fo
-      WHERE fo."isDeleted" = false
-      ${whereSearch}
-    `);
-
-    const total = Number(totalRaw?.[0]?.total ?? 0);
-
-    const rows = await prisma.$queryRaw<
+    const map = new Map<
+      number,
       {
         folderId: number;
         folderName: string;
+        plays: number;
+        devices: Set<number>;
         lastPlayedAt: Date | null;
-        totalRunTimeSec: bigint;
-        devices: bigint;
-        plays: bigint;
-      }[]
-    >(Prisma.sql`
-  SELECT
-    fo."id" AS "folderId",
-    fo."name" AS "folderName",
-    MAX(pl."createdAt") AS "lastPlayedAt",
-    COALESCE(SUM(COALESCE(pf."duration", 0)), 0)::bigint AS "totalRunTimeSec",
-    COUNT(DISTINCT pl."playerId")::bigint AS "devices",
-    COUNT(pl."id")::bigint AS "plays"
-  FROM "Folders" fo
-  LEFT JOIN "Files" f
-    ON f."folderId" = fo."id"
-   AND f."isDeleted" = false
-  LEFT JOIN "PlayLogs" pl
-    ON pl."fileId" = f."id"
-    ${whereDate}
-  LEFT JOIN "PlaylistFiles" pf
-    ON pf."id" = pl."playlistFileId"
-  WHERE
-    fo."isDeleted" = false
-    ${whereSearch}
-  GROUP BY fo."id", fo."name"
-  ORDER BY ${orderExpr}
-  OFFSET ${offset}
-  LIMIT ${limit}
-`);
+        totalRunTimeSec: number;
+      }
+    >();
 
-    const folderIds = rows.map((r) => r.folderId);
+    for (const l of logs) {
+      const folderId = l.file.folderId;
+      if (!map.has(folderId)) {
+        map.set(folderId, {
+          folderId,
+          folderName: l.file.folder.name,
+          plays: 0,
+          devices: new Set(),
+          lastPlayedAt: null,
+          totalRunTimeSec: 0,
+        });
+      }
+
+      const item = map.get(folderId)!;
+
+      item.plays += 1;
+
+      if (l.playerId) item.devices.add(l.playerId);
+
+      if (!item.lastPlayedAt || l.createdAt > item.lastPlayedAt)
+        item.lastPlayedAt = l.createdAt;
+
+      item.totalRunTimeSec += l.playlistFile?.duration ?? 0;
+    }
+
+    const mapped = Array.from(map.values()).map((m) => ({
+      folderId: m.folderId,
+      folderName: m.folderName,
+      plays: m.plays,
+      devices: m.devices.size,
+      lastPlayedAt: m.lastPlayedAt,
+      totalRunTimeSec: m.totalRunTimeSec,
+    }));
+
+    const dir = sortOrder === "asc" ? 1 : -1;
+
+    mapped.sort((a, b) => {
+      if (sortBy === "name")
+        return a.folderName.localeCompare(b.folderName) * dir;
+
+      if (sortBy === "plays") return (a.plays - b.plays) * dir;
+
+      if (sortBy === "devices") return (a.devices - b.devices) * dir;
+
+      if (sortBy === "totalRunTime")
+        return (a.totalRunTimeSec - b.totalRunTimeSec) * dir;
+
+      const at = a.lastPlayedAt?.getTime() ?? 0;
+      const bt = b.lastPlayedAt?.getTime() ?? 0;
+      return (at - bt) * dir;
+    });
+
+    const total = mapped.length;
+
+    const paginated = mapped.slice(offset, offset + limit);
+
+    const folderIds = paginated.map((r) => r.folderId);
 
     const thumbs = folderIds.length
-      ? await prisma.$queryRaw<
-          { folderId: number; fileKey: string }[]
-        >(Prisma.sql`
-          SELECT DISTINCT ON (f."folderId")
-            f."folderId" AS "folderId",
-            f."fileKey" AS "fileKey"
-          FROM "Files" f
-          WHERE
-            f."folderId" IN (${Prisma.join(folderIds)})
-            AND f."isDeleted" = false
-            AND f."fileType" ILIKE 'image/%'
-          ORDER BY f."folderId", f."createdAt" ASC
-        `)
+      ? await prisma.file.findMany({
+          where: {
+            folderId: { in: folderIds },
+            isDeleted: false,
+            fileType: { startsWith: "image/" },
+          },
+          orderBy: { createdAt: "asc" },
+          distinct: ["folderId"],
+          select: {
+            folderId: true,
+            fileKey: true,
+          },
+        })
       : [];
 
     const thumbKeyByFolderId = new Map<number, string>();
@@ -453,14 +479,14 @@ export const getFolderLogs = async (
       }),
     );
 
-    const items: FolderLogItem[] = rows.map((r) => ({
+    const items: FolderLogItem[] = paginated.map((r) => ({
       folderId: r.folderId,
       folderName: r.folderName,
       thumbnail: thumbUrlByFolderId.get(r.folderId) ?? "",
       lastPlayedAt: r.lastPlayedAt ?? null,
-      totalRunTimeSec: Number(r.totalRunTimeSec ?? 0n),
-      devices: Number(r.devices ?? 0n),
-      plays: Number(r.plays ?? 0n),
+      totalRunTimeSec: r.totalRunTimeSec,
+      devices: r.devices,
+      plays: r.plays,
     }));
 
     return reply.status(200).send({
@@ -476,24 +502,28 @@ export const getFolderLogs = async (
         sortBy,
         sortOrder,
         search: searchTerm,
-        date: range
-          ? { start: range.start.toISOString(), end: range.end.toISOString() }
-          : null,
+        date: {
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+        },
       },
     });
   } catch (e) {
     const { status, payload } = toHttpError(e);
-    return reply.status(status).send(payload);
+    console.log(e, status, payload);
+    return reply.status(status).send({
+      message: payload.error || "Internal server error",
+    });
   }
 };
-
 export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const q = (req.query ?? {}) as any;
 
-    const range = parseDateRange(q?.date);
+    const range = parseRange(q?.startDate, q?.endDate);
 
-    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: FileLogSortBy = (q?.sortBy as FileLogSortBy) ?? "lastPlayed";
     const sortOrder: SortOrder = (q?.sortOrder as SortOrder) ?? "desc";
@@ -645,9 +675,10 @@ export const getPlaylistFileLogs = async (
   try {
     const q = (req.query ?? {}) as any;
 
-    const range = parseDateRange(q?.date);
+    const range = parseRange(q?.startDate, q?.endDate);
 
-    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: PlaylistFileLogSortBy =
       (q?.sortBy as PlaylistFileLogSortBy) ?? "lastPlayed";
@@ -831,9 +862,10 @@ export const getPlaylistLogs = async (
   try {
     const q = (req.query ?? {}) as any;
 
-    const range = parseDateRange(q?.date);
+    const range = parseRange(q?.startDate, q?.endDate);
 
-    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+    if (!range)
+      return reply.status(400).send({ message: "Invalid date range" });
 
     const sortBy: PlaylistLogSortBy =
       (q?.sortBy as PlaylistLogSortBy) ?? "lastPlayed";
@@ -935,6 +967,411 @@ export const getPlaylistLogs = async (
         date: range
           ? { start: range.start.toISOString(), end: range.end.toISOString() }
           : null,
+      },
+    });
+  } catch (e) {
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+
+export const getFolderPlayerStats = async (
+  request: FastifyRequest<{
+    Params: { folderId: number };
+    Querystring: {
+      startDate?: string;
+      endDate?: string;
+      offset?: number;
+      limit?: number;
+      search?: string;
+      sortBy?: string;
+      sortOrder?: "asc" | "desc";
+    };
+  }>,
+  reply: FastifyReply,
+) => {
+  try {
+    const folderId = Number(request?.params?.folderId);
+    if (!Number.isFinite(folderId))
+      return reply.status(400).send({ message: "Invalid folderId" });
+
+    const q = request.query ?? {};
+
+    const range = parseRange(q.startDate, q.endDate);
+    if (!range) return reply.status(400).send({ message: "Invalid date range" });
+
+    const offset = Math.max(0, Number(q.offset ?? 0));
+    const limit = Math.min(100, Math.max(1, Number(q.limit ?? 20)));
+
+    const searchTerm =
+      typeof q.search === "string" && q.search.trim().length > 0
+        ? q.search.trim().toLowerCase()
+        : null;
+
+    const logs = await prisma.playLog.findMany({
+      where: {
+        createdAt: { gte: range.start, lte: range.end },
+        playerId: { not: null },
+        file: {
+          isDeleted: false,
+          folderId,
+          folder: { isDeleted: false },
+        },
+      },
+      select: {
+        playerId: true,
+        createdAt: true,
+        player: { select: { id: true, name: true } },
+        playlistFile: { select: { duration: true } },
+      },
+    });
+
+    const map = new Map<
+      number,
+      {
+        playerId: number;
+        playerName: string;
+        plays: number;
+        totalRunTimeSec: number;
+      }
+    >();
+
+    for (const l of logs) {
+      const pid = l.playerId;
+      if (!pid || !l.player) continue;
+
+      if (!map.has(pid)) {
+        map.set(pid, {
+          playerId: l.player.id,
+          playerName: l.player.name,
+          plays: 0,
+          totalRunTimeSec: 0,
+        });
+      }
+
+      const item = map.get(pid)!;
+      item.plays += 1;
+      item.totalRunTimeSec += l.playlistFile?.duration ?? 0;
+    }
+
+    let mapped = Array.from(map.values()).map((m) => ({
+      playerId: m.playerId,
+      playerName: m.playerName,
+      plays: m.plays,
+      totalHours: m.totalRunTimeSec,
+    }));
+
+    if (searchTerm) {
+      mapped = mapped.filter((m) => m.playerName.toLowerCase().includes(searchTerm));
+    }
+
+    const playerIds = mapped.map((m) => m.playerId);
+
+    const sessions = playerIds.length
+      ? await prisma.playerSession.findMany({
+          where: { playerId: { in: playerIds } },
+          orderBy: [{ lastActiveAt: "desc" }],
+          select: { playerId: true, lastActiveAt: true, isActive: true, endedAt: true },
+        })
+      : [];
+
+    const latestSessionByPlayerId = new Map<number, { lastActiveAt: Date; isActive: boolean; endedAt: Date | null }>();
+    for (const s of sessions) {
+      if (!latestSessionByPlayerId.has(s.playerId)) {
+        latestSessionByPlayerId.set(s.playerId, {
+          lastActiveAt: s.lastActiveAt,
+          isActive: s.isActive,
+          endedAt: s.endedAt ?? null,
+        });
+      }
+    }
+
+    const withSession = mapped.map((m) => {
+      const ses = latestSessionByPlayerId.get(m.playerId);
+      const lastActive = ses?.lastActiveAt ?? null;
+      const online = lastActive ? isOnline(lastActive, Boolean(ses?.isActive && !ses?.endedAt)) : false;
+
+      return {
+        playerId: m.playerId,
+        playerName: m.playerName,
+        lastActive,
+        plays: m.plays,
+        totalHours: m.totalHours,
+        status: online ? "online" : "offline",
+      };
+    });
+
+    const sortBy = q.sortBy ?? "lastActive";
+    const dir = q.sortOrder === "asc" ? 1 : -1;
+
+    withSession.sort((a: any, b: any) => {
+      if (sortBy === "name") return a.playerName.localeCompare(b.playerName) * dir;
+      if (sortBy === "plays") return (a.plays - b.plays) * dir;
+      if (sortBy === "totalHours") return (a.totalHours - b.totalHours) * dir;
+      if (sortBy === "status") return a.status.localeCompare(b.status) * dir;
+
+      const at = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+      const bt = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+      return (at - bt) * dir;
+    });
+
+    const total = withSession.length;
+    const paginated = withSession.slice(offset, offset + limit);
+
+    return reply.send({
+      message: "Folder player stats fetched",
+      items: paginated,
+      pagination: {
+        total,
+        offset,
+        limit,
+        hasMore: offset + limit < total,
+      },
+      meta: {
+        totalPlayers: total,
+        date: {
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+        },
+      },
+    });
+  } catch (e) {
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export const getPlayerLogs = async (
+  req: FastifyRequest,
+  reply: FastifyReply,
+) => {
+  try {
+    const q = (req.query ?? {}) as any;
+
+    const parseRangeLocal = (startDate?: string, endDate?: string) => {
+      const isValid = (v?: string) => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+      let start: Date;
+      let end: Date;
+
+      if (isValid(startDate) && isValid(endDate)) {
+        const [sy, sm, sd] = startDate!.split("-").map(Number);
+        const [ey, em, ed] = endDate!.split("-").map(Number);
+
+        start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+        end = new Date(ey, em - 1, ed + 1, 0, 0, 0, 0);
+      } else {
+        const now = new Date();
+
+        start = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          0,
+          0,
+          0,
+          0,
+        );
+
+        end = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate() + 1,
+          0,
+          0,
+          0,
+          0,
+        );
+      }
+
+      return { start, end };
+    };
+
+    const range = parseRangeLocal(q?.startDate, q?.endDate);
+
+    const sessions = await prisma.playerSession.findMany({
+      where: {
+        startedAt: {
+          gte: range.start,
+          lt: range?.end,
+        },
+      },
+      include: {
+        player: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+
+    const now = new Date();
+
+    const map = new Map<
+      number,
+      {
+        id: number;
+        name: string;
+        lastSessionStart: Date | null;
+        lastSessionEnd: Date | null;
+        lastActive: Date | null;
+        totalRunTimeSec: number;
+        online: boolean;
+      }
+    >();
+
+    for (const s of sessions) {
+      if (!s.player) continue;
+
+      const endPoint =
+        s.endedAt ?? (s.isActive ? now : s.lastActiveAt ?? null);
+
+      const durationSec =
+        s.startedAt && endPoint
+          ? Math.max(
+              0,
+              Math.floor(
+                (endPoint.getTime() - s.startedAt.getTime()) / 1000,
+              ),
+            )
+          : 0;
+
+      const online = isOnline(
+        s.lastActiveAt,
+        Boolean(s.isActive && !s.endedAt),
+      );
+
+      if (!map.has(s.player.id)) {
+        map.set(s.player.id, {
+          id: s.player.id,
+          name: s.player.name,
+          lastSessionStart: s.startedAt ?? null,
+          lastSessionEnd: s.endedAt ?? null,
+          lastActive: s.lastActiveAt ?? null,
+          totalRunTimeSec: durationSec,
+          online,
+        });
+      } else {
+        const item = map.get(s.player.id)!;
+
+        item.totalRunTimeSec += durationSec;
+
+        if (
+          s.lastActiveAt &&
+          (!item.lastActive || s.lastActiveAt > item.lastActive)
+        ) {
+          item.lastActive = s.lastActiveAt;
+        }
+
+        if (
+          s.startedAt &&
+          (!item.lastSessionStart ||
+            s.startedAt > item.lastSessionStart)
+        ) {
+          item.lastSessionStart = s.startedAt;
+          item.lastSessionEnd = s.endedAt ?? null;
+        }
+
+        if (online) item.online = true;
+      }
+    }
+
+    const items = Array.from(map.values()).map((p) => ({
+      id: p.id,
+      name: p.name,
+      sessionStart: p.lastSessionStart,
+      sessionEnd: p.lastSessionEnd,
+      status: p.online ? "Online" : "Offline",
+      lastActive: p.lastActive,
+      totalRunTimeSec: p.totalRunTimeSec,
+    }));
+
+    return reply.status(200).send({
+      message: "Player logs fetched",
+      items,
+    });
+  } catch (e: any) {
+    const { status, payload } = toHttpError(e);
+    return reply.status(status).send(payload);
+  }
+};
+
+export const getPlayerSessions = async (
+  req: FastifyRequest<{
+    Params: { playerId: number };
+    Querystring: {
+      startDate?: string;
+      endDate?: string;
+    };
+  }>,
+  reply: FastifyReply,
+) => {
+  try {
+    const playerId = Number(req.params?.playerId);
+    if (!Number.isFinite(playerId)) {
+      return reply.status(400).send({ message: "Invalid playerId" });
+    }
+
+    const player = await prisma.player.findUnique({
+      where: { id: playerId },
+      select: { id: true,name: true },
+    });
+    if (!player) return reply.status(404).send({ message: "Player not found" });
+
+    const q = req.query ?? {};
+
+    const range = parseRange(q?.startDate, q?.endDate);
+    console.log(range, q?.startDate, q?.endDate);
+    if (!range) {
+      return reply.status(400).send({ message: "Invalid date range" });
+    }
+
+    const sessions = await prisma.playerSession.findMany({
+      where: {
+        playerId,
+        startedAt: {
+          gte: range.start,
+          lt: range.end,
+        },
+      },
+      orderBy: { startedAt: "desc" },
+    });
+
+    const now = new Date();
+
+    const items = sessions.map((s) => {
+      let duration = 0;
+
+      if (s.startedAt) {
+        if (s.isActive && !s.endedAt) {
+          duration = Math.floor(
+            (now.getTime() - s.startedAt.getTime()) / 1000,
+          );
+        } else if (s.endedAt) {
+          duration = Math.floor(
+            (s.endedAt.getTime() - s.startedAt.getTime()) / 1000,
+          );
+        }
+      }
+
+      return {
+        sessionStart: s.startedAt ?? null,
+        sessionEnd: s.endedAt ?? null,
+        status: s.isActive ? "Online" : "Offline",
+        lastActive: s.lastActiveAt ?? null,
+        totalRunTimeSec: Math.max(0, duration),
+      };
+    });
+
+    return reply.status(200).send({
+      message: "Player sessions fetched",
+      player,
+      items,
+      meta: {
+        date: {
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+        },
       },
     });
   } catch (e) {

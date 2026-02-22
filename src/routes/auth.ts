@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { createAdminUser, loginAdminUser } from "../controllers/auth";
+import { createAdminUser, loginAdminUser, refreshToken } from "../controllers/auth";
 
 export default async function authRoutes(app: FastifyInstance) {
   app.post(
@@ -32,4 +32,6 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     }
   }, loginAdminUser);
+
+  app.post("/refresh-token", refreshToken);
 }

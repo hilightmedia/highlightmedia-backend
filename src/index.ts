@@ -41,7 +41,7 @@ await fastify.register(cors);
 await fastify.register(multipart, {
   limits: {
     files: 1,
-    fileSize: Number(env.MAX_FILE_MB || 100) * 1024 * 1024,
+    fileSize: Number(env.MAX_FILE_MB || 300) * 1024 * 1024,
   },
 });
 

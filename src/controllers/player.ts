@@ -10,9 +10,34 @@ import {
   SortOrder,
 } from "../types/types";
 import { generateUnique16Hex } from "../services/deviceCode";
+import { ONLINE_THRESHOLD_MS } from "../config/constants";
 
 export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
+    const now = new Date();
+
+    const inactiveSessions = await prisma.playerSession.findMany({
+      where: {
+        isActive: true,
+        lastActiveAt: {
+          lt: new Date(Date.now() - ONLINE_THRESHOLD_MS),
+        },
+      },
+      select: { id: true },
+    });
+
+    if (inactiveSessions.length) {
+      await prisma.playerSession.updateMany({
+        where: {
+          id: { in: inactiveSessions.map((s) => s.id) },
+        },
+        data: {
+          isActive: false,
+          endedAt: now,
+        },
+      });
+    }
+
     const {
       sortBy = "lastActive",
       sortOrder = "desc",
@@ -61,8 +86,6 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
       },
     });
 
-    const now = new Date();
-
     let rows: PlayerRow[] = players.map((p: any) => {
       const s = p.sessions[0] ?? null;
       const status: "Online" | "Offline" = s?.isActive ? "Online" : "Offline";
@@ -74,8 +97,8 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
         ? s.isActive
           ? diffSec(now, s.startedAt)
           : s.endedAt
-            ? diffSec(s.endedAt, s.startedAt)
-            : null
+          ? diffSec(s.endedAt, s.startedAt)
+          : null
         : null;
 
       const lastActiveCandidates: Date[] = [];
