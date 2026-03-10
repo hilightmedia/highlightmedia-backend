@@ -1,89 +1,60 @@
-import type { PrismaClient } from "@prisma/client";
-import { env } from "../config/env";
-import { errorCodes } from "../utils/errors";
-import HttpError from "../utils/httpError";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { env } from "../config/env.js";
 
-const OTP_TTL_SECONDS = Number(env.OTP_TTL_SECONDS ?? 300); // 5m
-const OTP_MAX_VERIFY_ATTEMPTS = Number(env.OTP_MAX_VERIFY_ATTEMPTS ?? 5);
-const OTP_MAX_PER_HOUR = Number(env.OTP_MAX_PER_HOUR ?? 5);
+const ses = new SESClient({
+  region: env.AWS_REGION,
+  credentials: {
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  },
+});
 
-function genOtp(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
+export const OtpService = {
+  generate(length = 6) {
+    return Array.from({ length }, () => Math.floor(Math.random() * 10)).join("");
+  },
 
+  getExpiry(minutes = 5) {
+    return new Date(Date.now() + minutes * 60 * 1000);
+  },
 
+  getResendWindow(seconds = 60) {
+    return new Date(Date.now() + seconds * 1000);
+  },
 
-export async function verifyOtp(
-  prisma: PrismaClient,
-  mobile: string,
-  otp: string,
-) {
-  const rec = await prisma.otp_verification.findFirst({
-    where: { mobile, is_active: true },
-    orderBy: { created_at: "desc" },
-  });
+  isExpired(date?: Date | null) {
+    if (!date) return true;
+    return date.getTime() < Date.now();
+  },
 
-  if (!rec) throw new HttpError(errorCodes.UNAUTHORIZED, 401);
-
-  if (rec.attempts >= OTP_MAX_VERIFY_ATTEMPTS) {
-    await prisma.otp_verification.update({
-      where: { id: rec.id },
-      data: { is_active: false },
+  async send(email: string, otp: string) {
+    const command = new SendEmailCommand({
+      Source: env.AWS_SES_FROM_EMAIL,
+      Destination: {
+        ToAddresses: [email],
+      },
+      Message: {
+        Subject: {
+          Data: "OTP Verification",
+        },
+        Body: {
+          Html: {
+            Data: `
+              <div style="font-family: Arial, sans-serif;">
+                <h2>OTP Verification</h2>
+                <p>Your OTP is:</p>
+                <div style="font-size: 24px; font-weight: bold; letter-spacing: 6px;">${otp}</div>
+                <p>This OTP expires in 5 minutes.</p>
+              </div>
+            `,
+          },
+          Text: {
+            Data: `Your OTP is ${otp}. This OTP expires in 5 minutes.`,
+          },
+        },
+      },
     });
-    throw new HttpError(errorCodes.OTP_ATTEMPTS_EXCEEDED, 429);
-  }
 
-  if (new Date() > new Date(rec.expires_at)) {
-    await prisma.otp_verification.update({
-      where: { id: rec.id },
-      data: { is_active: false },
-    });
-    throw new HttpError(errorCodes.OTP_EXPIRED, 400);
-  }
-
-  if (rec.otp !== otp) {
-    await prisma.otp_verification.update({
-      where: { id: rec.id },
-      data: { attempts: { increment: 1 } },
-    });
-    throw new HttpError(errorCodes.INVALID_OTP, 400);
-  }
-
-  return prisma.otp_verification.update({
-    where: { id: rec.id },
-    data: { verified: true },
-  });
-}
-
-export async function assertLoginWindow(
-  prisma: PrismaClient,
-  verificationId: string,
-  mobile: string,
-) {
-  const rec = await prisma.otp_verification.findUnique({
-    where: { id: verificationId, mobile },
-  });
-  if (!rec || rec.mobile !== mobile || !rec.verified)
-    throw new HttpError(errorCodes.UNAUTHORIZED, 401);
-
-  const secondsSinceVerify =
-    (Date.now() - new Date(rec.updated_at).getTime()) / 1000;
-  if (secondsSinceVerify > 30)
-    throw new HttpError(errorCodes.OTP_WINDOW_EXPIRED, 400);
-  return rec;
-}
-
-export async function assertSignupWindow(
-  prisma: PrismaClient,
-  verificationId: string,
-  mobile: string,
-) {
-  const rec = await prisma.otp_verification.findUnique({
-    where: { id: verificationId, mobile },
-  });
-  if (!rec || !rec.verified) throw new HttpError(errorCodes.UNAUTHORIZED, 401);
-
-  // const secondsSinceVerify = (Date.now() - new Date(rec.updated_at).getTime()) / 10000;
-  // if (secondsSinceVerify > 8 * 60) throw new HttpError(errorCodes.OTP_WINDOW_EXPIRED, 400);
-  return rec;
-}
+    await ses.send(command);
+  },
+};

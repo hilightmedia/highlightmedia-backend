@@ -8,14 +8,16 @@ datasource db {
 }
 
 model AdminUser {
-  id           Int       @id @default(autoincrement())
-  name         String
-  email        String    @unique @db.VarChar(60)
-  password     String    @db.VarChar(255)
-  otp          String?   @db.VarChar(6)
-  otpExpiresAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                   Int       @id @default(autoincrement())
+  name                 String
+  email                String    @unique @db.VarChar(60)
+  password             String    @db.VarChar(255)
+  otp                  String?   @db.VarChar(6)
+  otpExpiresAt         DateTime?
+  otpVerified          Boolean   @default(false)
+  otpResendAvailableAt DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   @@map("AdminUsers")
 }
