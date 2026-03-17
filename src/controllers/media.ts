@@ -1,7 +1,11 @@
 import toHttpError from "../utils/toHttpError";
 import { prisma } from "../db/client";
 import { FastifyReply, FastifyRequest } from "fastify";
-import { generateSignedUrl, handleUpload } from "../services/file";
+import {
+  deleteFileFromS3,
+  generateSignedUrl,
+  handleUpload,
+} from "../services/file";
 import {
   BulkAddFilesToPlaylistsBody,
   MediaStatus,
@@ -408,6 +412,8 @@ export const deleteFolder = async (
 };
 
 export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
+  let uploaded: { key: string; url: string } | null = null;
+
   try {
     if (!req.isMultipart()) {
       return reply
@@ -415,62 +421,101 @@ export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
         .send({ message: "Request must be multipart/form-data" });
     }
 
-    const { folderId } = req.params as { folderId: number };
+    const { folderId } = req.params as { folderId: string };
+
     const folder_id = Number(folderId);
+
     if (!Number.isFinite(folder_id)) {
       return reply.status(400).send({ message: "Invalid folderId" });
     }
 
     const folder = await prisma.folder.findFirst({
       where: { id: folder_id, isDeleted: false },
+      select: { id: true, name: true },
     });
-    if (!folder) return reply.status(404).send({ message: "Folder not found" });
 
-    const prefix = folder.name.replace(/[^a-zA-Z0-9]/g, "_");
+    if (!folder) {
+      return reply.status(404).send({ message: "Folder not found" });
+    }
+
+    const safeFolderName = folder.name.replace(/[^a-zA-Z0-9]/g, "_");
+    const prefix = `${folder.id}_${safeFolderName || "folder"}`;
 
     let filename: string | null = null;
     let mimetype: string | null = null;
 
-    let sizeRaw: any = undefined;
-    let durationRaw: any = undefined;
-    let typeRaw: any = undefined;
+    let sizeRaw: unknown;
+    let durationRaw: unknown;
+    let typeRaw: unknown;
 
-    let uploadPromise: Promise<{ key: string; url: string }> | null = null;
+    let fileCount = 0;
 
     for await (const part of req.parts()) {
-      if (part.type === "file") {
-        if (uploadPromise) {
-          return reply.status(400).send({ message: "Only 1 file allowed" });
+      if (part.type === "field") {
+        if (part.fieldname === "size") {
+          if (sizeRaw !== undefined) {
+            return reply
+              .status(400)
+              .send({ message: 'Duplicate field "size"' });
+          }
+          sizeRaw = part.value;
         }
 
-        if (!ALLOWED_MIME.has(part.mimetype)) {
-          return reply.status(400).send({
-            message: `Invalid file type for "${part.filename}". Only image/video/pdf allowed`,
-            mimetype: part.mimetype,
-          });
+        if (part.fieldname === "duration") {
+          if (durationRaw !== undefined) {
+            return reply
+              .status(400)
+              .send({ message: 'Duplicate field "duration"' });
+          }
+          durationRaw = part.value;
         }
 
-        filename = part.filename;
-        mimetype = part.mimetype;
-
-        uploadPromise = handleUpload({
-          fileStream: part.file,
-          originalname: part.filename,
-          mimetype: part.mimetype,
-          prefix,
-        });
+        if (part.fieldname === "type") {
+          if (typeRaw !== undefined) {
+            return reply
+              .status(400)
+              .send({ message: 'Duplicate field "type"' });
+          }
+          typeRaw = part.value;
+        }
 
         continue;
       }
 
-      if (part.type === "field") {
-        if (part.fieldname === "size") sizeRaw = part.value;
-        if (part.fieldname === "duration") durationRaw = part.value;
-        if (part.fieldname === "type") typeRaw = part.value;
+      if (part.type === "file") {
+        fileCount += 1;
+
+        if (fileCount > 1) {
+          part.file.resume();
+          return reply.status(400).send({ message: "Only 1 file allowed" });
+        }
+
+        if (!part.filename || !part.filename.trim()) {
+          part.file.resume();
+          return reply.status(400).send({ message: "Invalid filename" });
+        }
+
+        if (!part.mimetype || !ALLOWED_MIME.has(part.mimetype)) {
+          part.file.resume();
+          return reply.status(400).send({
+            message: `Invalid file type for "${part.filename}"`,
+            mimetype: part.mimetype,
+          });
+        }
+
+        filename = part.filename.trim();
+        mimetype = part.mimetype;
+
+        uploaded = await handleUpload({
+          fileStream: part.file,
+          originalname: filename,
+          mimetype,
+          prefix,
+        });
       }
     }
 
-    if (!uploadPromise || !filename || !mimetype) {
+    if (!uploaded || !filename || !mimetype) {
       return reply.status(400).send({ message: "No file found" });
     }
 
@@ -485,20 +530,21 @@ export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
         : null;
 
     if (duration !== null && (!Number.isFinite(duration) || duration < 0)) {
+      await safeDeleteUploadedFile(uploaded.key);
       return reply.status(400).send({ message: "Invalid duration" });
     }
 
     if (fileSize !== null && (!Number.isFinite(fileSize) || fileSize < 0)) {
+      await safeDeleteUploadedFile(uploaded.key);
       return reply.status(400).send({ message: "Invalid file size" });
     }
 
     if (typeof typeRaw === "string" && typeRaw.trim() !== "") {
       if (typeRaw !== mimetype) {
+        await safeDeleteUploadedFile(uploaded.key);
         return reply.status(400).send({ message: "Invalid type" });
       }
     }
-
-    const result = await uploadPromise;
 
     const media = await prisma.file.create({
       data: {
@@ -506,15 +552,30 @@ export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
         name: filename,
         verified: true,
         fileType: mimetype,
-        fileKey: result.key,
+        fileKey: uploaded.key,
         fileSize: String(fileSize ?? 0),
         duration: String(duration ?? 0),
+      },
+      select: {
+        id: true,
+        name: true,
+        verified: true,
+        fileType: true,
+        fileKey: true,
+        fileSize: true,
+        duration: true,
+        folderId: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
     return reply.status(200).send({
       message: "Media uploaded successfully",
-      media: { ...media, signedUrl: result.url },
+      media: {
+        ...media,
+        signedUrl: uploaded.url,
+      },
       meta: {
         file: filename,
         size: fileSize,
@@ -523,11 +584,22 @@ export const uploadMedia = async (req: FastifyRequest, reply: FastifyReply) => {
       },
     });
   } catch (e) {
-    console.log("Upload media error: ", e);
+    if (uploaded?.key) {
+      await safeDeleteUploadedFile(uploaded.key);
+    }
+
     const { status, payload } = toHttpError(e);
     return reply.status(status).send(payload);
   }
 };
+
+async function safeDeleteUploadedFile(key: string): Promise<void> {
+  try {
+    await deleteFileFromS3(key);
+  } catch (err) {
+    console.log("safeDeleteUploadedFile--------", err);
+  }
+}
 
 export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
@@ -1002,18 +1074,33 @@ export async function bulkAddFilesToMultiplePlaylists(
     duration?: number;
   };
   const fileIds = Array.from(
-    new Set((body.fileIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+    new Set(
+      (body.fileIds ?? [])
+        .map(Number)
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
   );
   const playlistIds = Array.from(
-    new Set((body.playlistIds ?? []).map(Number).filter((n) => Number.isFinite(n) && n > 0)),
+    new Set(
+      (body.playlistIds ?? [])
+        .map(Number)
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
   );
 
   if (!fileIds.length || !playlistIds.length) {
-    return reply.code(400).send({ success: false, message: "fileIds and playlistIds are required" });
+    return reply
+      .code(400)
+      .send({
+        success: false,
+        message: "fileIds and playlistIds are required",
+      });
   }
 
   const durationOverride =
-    typeof body.duration === "number" && body.duration > 0 ? Math.floor(body.duration) : null;
+    typeof body.duration === "number" && body.duration > 0
+      ? Math.floor(body.duration)
+      : null;
 
   const files = await prisma.file.findMany({
     where: { id: { in: fileIds }, isDeleted: false },
@@ -1021,7 +1108,9 @@ export async function bulkAddFilesToMultiplePlaylists(
   });
   const validFileIds = files.map((f) => f.id);
   if (!validFileIds.length) {
-    return reply.code(400).send({ success: false, message: "No valid files found" });
+    return reply
+      .code(400)
+      .send({ success: false, message: "No valid files found" });
   }
 
   const playlists = await prisma.playlist.findMany({
@@ -1029,13 +1118,13 @@ export async function bulkAddFilesToMultiplePlaylists(
     select: { id: true, defaultDuration: true },
   });
   if (!playlists.length) {
-    return reply.code(404).send({ success: false, message: "No playlists found" });
+    return reply
+      .code(404)
+      .send({ success: false, message: "No playlists found" });
   }
 
   const playlistDefault = new Map<number, number>();
   for (const p of playlists) playlistDefault.set(p.id, p.defaultDuration);
-
-
 
   const maxOrders = await prisma.playlistFile.groupBy({
     by: ["playlistId"],
@@ -1044,7 +1133,8 @@ export async function bulkAddFilesToMultiplePlaylists(
   });
 
   const baseOrder = new Map<number, number>();
-  for (const row of maxOrders) baseOrder.set(row.playlistId, row._max.playOrder ?? 0);
+  for (const row of maxOrders)
+    baseOrder.set(row.playlistId, row._max.playOrder ?? 0);
   for (const p of playlists) if (!baseOrder.has(p.id)) baseOrder.set(p.id, 0);
 
   const counters = new Map<number, number>();
@@ -1071,7 +1161,7 @@ export async function bulkAddFilesToMultiplePlaylists(
         fileId: fid,
         subPlaylistId: null,
         isSubPlaylist: false,
-        duration: durationOverride ?? (playlistDefault.get(pid) ?? 30),
+        duration: durationOverride ?? playlistDefault.get(pid) ?? 30,
         playOrder: (baseOrder.get(pid) ?? 0) + i,
       });
     }
@@ -1099,7 +1189,10 @@ export async function bulkAddFilesToMultiplePlaylists(
 
 export const getAlerts = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
-    const q = (req.query ?? {}) as { offset?: string | number; limit?: string | number };
+    const q = (req.query ?? {}) as {
+      offset?: string | number;
+      limit?: string | number;
+    };
 
     const offset = Math.max(0, Number(q.offset ?? 0));
     const limit = Math.min(100, Math.max(1, Number(q.limit ?? 10)));
