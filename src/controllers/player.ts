@@ -68,6 +68,7 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
         location: true,
         linked: true,
         updatedAt: true,
+        playlistId: true,
         playlist: { select: { id: true, name: true } },
         deviceCode: true,
         deviceKey: true,
