@@ -99,13 +99,15 @@ export async function getClientFolders(
       );
 
       for (const [folderId, ids] of folderFileIds.entries()) {
-        if (ids.some((id) => usedFileIdSet.has(id)))
+        if (ids.some((id) => usedFileIdSet.has(id))) {
           activeFolderIds.add(folderId);
+        }
       }
     }
 
     const now = new Date();
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const MB = 1024 * 1024;
 
     const computed = await Promise.all(
       (folders as any[]).map(async (folder: any) => {
@@ -141,8 +143,9 @@ export async function getClientFolders(
         const firstImage = folder.files?.find(
           (f: any) => f?.fileType?.split("/")[0] === "image",
         );
-        if (firstImage?.fileKey)
+        if (firstImage?.fileKey) {
           thumbnail = await generateSignedUrl(firstImage.fileKey);
+        }
 
         let validityStatus: string = "running";
         let statusBucket: StatusFilter = "running";
@@ -197,27 +200,33 @@ export async function getClientFolders(
 
     let result = computed;
 
-    if (fromDate)
+    if (fromDate) {
       result = result.filter(
         (x) => x.lastModified.getTime() >= fromDate.getTime(),
       );
-    if (toDate)
+    }
+
+    if (toDate) {
       result = result.filter(
         (x) => x.lastModified.getTime() <= toDate.getTime(),
       );
+    }
 
     const sb: SizeBucket | undefined = sizeBucket as SizeBucket | undefined;
     if (sb) {
       result = result.filter((x) => {
-        if (sb === "0-10") return x.folderSize >= 0 && x.folderSize < 10;
-        if (sb === "10-100") return x.folderSize >= 10 && x.folderSize < 100;
-        if (sb === "100+") return x.folderSize >= 100;
+        const sizeInMb = x.folderSize / MB;
+        if (sb === "0-10") return sizeInMb >= 0 && sizeInMb < 10;
+        if (sb === "10-100") return sizeInMb >= 10 && sizeInMb < 100;
+        if (sb === "100+") return sizeInMb >= 100;
         return true;
       });
     }
 
     const st: StatusFilter | undefined = status as StatusFilter | undefined;
-    if (st) result = result.filter((x) => x.statusBucket === st);
+    if (st) {
+      result = result.filter((x) => x.statusBucket === st);
+    }
 
     result.sort((a, b) => {
       switch (parsedSortBy) {
@@ -702,6 +711,8 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
       }
     }
 
+    const MB = 1024 * 1024;
+
     let enriched = await Promise.all(
       media.map(async (m) => {
         const signedUrl = await generateSignedUrl(m.fileKey);
@@ -729,9 +740,10 @@ export const getMedia = async (req: FastifyRequest, reply: FastifyReply) => {
     const sb: SizeBucket | undefined = sizeBucket;
     if (sb) {
       enriched = enriched.filter((x) => {
-        if (sb === "0-10") return x.fileSize >= 0 && x.fileSize < 10;
-        if (sb === "10-100") return x.fileSize >= 10 && x.fileSize < 100;
-        if (sb === "100+") return x.fileSize >= 100;
+        const sizeInMb = x.fileSize / MB;
+        if (sb === "0-10") return sizeInMb >= 0 && sizeInMb < 10;
+        if (sb === "10-100") return sizeInMb >= 10 && sizeInMb < 100;
+        if (sb === "100+") return sizeInMb >= 100;
         return true;
       });
     }

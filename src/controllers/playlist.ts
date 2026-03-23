@@ -294,11 +294,11 @@ export const getPlaylistById = async (
                 fileSize: true,
                 updatedAt: true,
                 isDeleted: true,
-                folder:{
-                  select:{
-                    name:true,
-                  }
-                }
+                folder: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
             subPlaylist: {

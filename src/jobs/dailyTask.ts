@@ -25,7 +25,7 @@ async function cleanupTrash() {
     if (!files.length) break;
 
     const fileIds = files.map((f) => f.id);
-    const keys = files.map((f) => f.fileKey);
+    const keys = files.map((f) => f.fileKey).filter(Boolean);
 
     try {
       await prisma.$transaction([
@@ -37,10 +37,12 @@ async function cleanupTrash() {
         }),
       ]);
 
-      try {
-        await deleteFilesFromS3(keys);
-      } catch (s3Err) {
-        console.error("[CRON] S3 delete failed:", keys, s3Err);
+      if (keys.length) {
+        try {
+          await deleteFilesFromS3(keys);
+        } catch (s3Err) {
+          console.error("[CRON] S3 delete failed:", keys, s3Err);
+        }
       }
 
       console.log(`[CRON] Deleted batch of ${files.length}`);
@@ -50,14 +52,13 @@ async function cleanupTrash() {
     }
 
     batchCount++;
-
-    // 🧠 throttle
     await new Promise((r) => setTimeout(r, 100));
   }
 
   console.log("[CRON] Trash cleanup done");
 
   await deleteEmptyFolders();
+  await generateValidityAlerts();
 }
 
 async function deleteEmptyFolders() {
@@ -74,3 +75,21 @@ async function deleteEmptyFolders() {
 
   console.log(`[CRON] Deleted ${deleted} empty folders`);
 }
+
+async function generateValidityAlerts() {
+  console.log("[CRON] Generating validity alerts...");
+
+  await prisma.$executeRaw`SELECT generate_validity_alerts()`;
+
+  console.log("[CRON] Validity alerts generated");
+}
+
+cleanupTrash()
+  .then(() => {
+    console.log("[CRON] finished");
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("[CRON] failed", err);
+    process.exit(1);
+  });
