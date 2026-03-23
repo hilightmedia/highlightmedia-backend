@@ -2,7 +2,10 @@
 
 APP_DIR="/home/ubuntu/highlightmedia-backend"
 LOCK_FILE="/tmp/highlightmedia-cleanup.lock"
-LOG_FILE="/var/log/highlightmedia-cron.log"
+LOG_DIR="/home/ubuntu/highlightmedia/logs"
+LOG_FILE="$LOG_DIR/highlightmedia-cron.log"
+
+mkdir -p "$LOG_DIR"
 
 cd "$APP_DIR" || exit 1
 
