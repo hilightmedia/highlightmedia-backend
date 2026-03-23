@@ -38,19 +38,6 @@ export const getAnalyticsSummary = async (
       }),
     ]);
 
-    const now = new Date();
-
-    const offlineSessionIds = activeSessions
-      .filter((s) => !isOnline(s.lastActiveAt, s.isActive))
-      .map((s) => s.id);
-
-    if (offlineSessionIds.length) {
-      await prisma.playerSession.updateMany({
-        where: { id: { in: offlineSessionIds }, endedAt: null },
-        data: { endedAt: now, isActive: false },
-      });
-    }
-
     const onlinePlayerIds = new Set(
       activeSessions
         .filter((s) => isOnline(s.lastActiveAt, s.isActive))

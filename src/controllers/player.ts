@@ -16,28 +16,6 @@ export const getPlayers = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const now = new Date();
 
-    const inactiveSessions = await prisma.playerSession.findMany({
-      where: {
-        isActive: true,
-        lastActiveAt: {
-          lt: new Date(Date.now() - ONLINE_THRESHOLD_MS),
-        },
-      },
-      select: { id: true },
-    });
-
-    if (inactiveSessions.length) {
-      await prisma.playerSession.updateMany({
-        where: {
-          id: { in: inactiveSessions.map((s) => s.id) },
-        },
-        data: {
-          isActive: false,
-          endedAt: now,
-        },
-      });
-    }
-
     const {
       sortBy = "lastActive",
       sortOrder = "desc",

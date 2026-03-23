@@ -18,6 +18,7 @@ import playerRoutes from "./routes/player.js";
 import trashRoutes from "./routes/trash.js";
 import tvAppRoutes from "./routes/tvapp.js";
 import analyticsRoutes from "./routes/analytics.js";
+import { sessionCleanupHook } from "./middleware/sessionCleanUpHook.js";
 
 const fastify = Fastify({
   logger: {
@@ -115,6 +116,8 @@ fastify.addHook("preHandler", async (request, reply) => {
     });
   }
 });
+
+fastify.addHook("onRequest",sessionCleanupHook)
 
 fastify.setErrorHandler((error, request, reply) => {
   if (error instanceof AppError) {
