@@ -12,7 +12,6 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Readable } from "node:stream";
-import multer from "multer";
 import s3 from "../config/s3";
 import { env } from "../config/env";
 import { sanitizeSegment, ts } from "../utils/file";

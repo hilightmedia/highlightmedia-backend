@@ -511,9 +511,7 @@ export const getFolderLogs = async (
   } catch (e) {
     const { status, payload } = toHttpError(e);
     console.log(e, status, payload);
-    return reply.status(status).send({
-      message: payload.error || "Internal server error",
-    });
+    return reply.status(status).send(payload);
   }
 };
 export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
