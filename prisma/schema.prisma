@@ -147,6 +147,7 @@ model PlayLog {
   fileId         Int
   playlistId     Int?
   subPlaylistId  Int?
+  duration       String   @default("0") @db.VarChar(30)
   isSubPlaylist  Boolean  @default(false)
   createdAt      DateTime @default(now())
 
@@ -181,4 +182,19 @@ model Alert {
   @@index([at])
   @@index([folderId])
   @@map("Alerts")
+}
+
+model EmailSubscription {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique @db.VarChar(60)
+  createdAt      DateTime @default(now())
+  lastSubmission DateTime @default(now()) @updatedAt
+}
+
+model ContactSubmissions {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique @db.VarChar(60)
+  mobile         String   @unique @db.VarChar(15)
+  createdAt      DateTime @default(now())
+  lastSubmission DateTime @default(now()) @updatedAt
 }

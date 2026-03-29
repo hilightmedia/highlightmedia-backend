@@ -353,13 +353,13 @@ export const getFolderLogs = async (
       select: {
         playerId: true,
         createdAt: true,
+        duration: true,
         file: {
           select: {
             folderId: true,
             folder: { select: { name: true } },
           },
         },
-        playlistFile: { select: { duration: true } },
       },
     });
 
@@ -394,10 +394,11 @@ export const getFolderLogs = async (
 
       if (l.playerId) item.devices.add(l.playerId);
 
-      if (!item.lastPlayedAt || l.createdAt > item.lastPlayedAt)
+      if (!item.lastPlayedAt || l.createdAt > item.lastPlayedAt) {
         item.lastPlayedAt = l.createdAt;
+      }
 
-      item.totalRunTimeSec += l.playlistFile?.duration ?? 0;
+      item.totalRunTimeSec += Number(l.duration ?? 0);
     }
 
     const mapped = Array.from(map.values()).map((m) => ({
@@ -501,6 +502,7 @@ export const getFolderLogs = async (
     return reply.status(status).send(payload);
   }
 };
+
 export const getFileLogs = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const q = (req.query ?? {}) as any;
@@ -1007,8 +1009,8 @@ export const getFolderPlayerStats = async (
       select: {
         playerId: true,
         createdAt: true,
+        duration: true,
         player: { select: { id: true, name: true } },
-        playlistFile: { select: { duration: true } },
       },
     });
 
@@ -1037,7 +1039,7 @@ export const getFolderPlayerStats = async (
 
       const item = map.get(pid)!;
       item.plays += 1;
-      item.totalRunTimeSec += l.playlistFile?.duration ?? 0;
+      item.totalRunTimeSec += Number(l.duration ?? 0);
     }
 
     let mapped = Array.from(map.values()).map((m) => ({
@@ -1083,7 +1085,7 @@ export const getFolderPlayerStats = async (
         lastActive,
         plays: m.plays,
         totalHours: m.totalHours,
-        status: online ? "online" : "offline",
+        status: online ? "Online" : "Offline",
       };
     });
 

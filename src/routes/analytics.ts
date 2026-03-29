@@ -9,7 +9,6 @@ import {
   fileLogsSchema,
   playlistLogsSchema,
   folderPlayerStatsSchema,
-  playerSessionsSchema,
   getPlayerLogsSchema,
   getPlayerSessionsSchema,
 } from "../schemas/analytics";

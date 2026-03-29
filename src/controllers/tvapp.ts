@@ -254,12 +254,17 @@ export const createPlayLog = async (
       return reply.status(400).send({ message: "Invalid fileId" });
     }
 
-    const player = await prisma.player.findUnique({
-      where: { deviceCode, playlistId: { not: null } },
+    const player = await prisma.player.findFirst({
+      where: {
+        deviceCode,
+        playlistId: { not: null },
+      },
       select: { id: true, playlistId: true },
     });
 
-    if (!player) return reply.status(404).send({ message: "Player not found" });
+    if (!player) {
+      return reply.status(404).send({ message: "Player not found" });
+    }
 
     if (!playlistId || Number(player.playlistId) !== Number(playlistId)) {
       return reply.status(400).send({ message: "Playlist not found" });
@@ -271,16 +276,24 @@ export const createPlayLog = async (
       where: { id: fileId },
       select: { id: true },
     });
-    if (!fileExists) return reply.status(400).send({ message: "File not found" });
+
+    if (!fileExists) {
+      return reply.status(400).send({ message: "File not found" });
+    }
+
+    let playLogDuration = "0";
 
     if (playlistFileId) {
       const playlistFileExists = await prisma.playlistFile.findUnique({
         where: { id: playlistFileId },
-        select: { id: true, playlistId: true },
+        select: { id: true, playlistId: true, duration: true },
       });
+
       if (!playlistFileExists || Number(playlistFileExists.playlistId) !== Number(playlistId)) {
         return reply.status(400).send({ message: "Invalid playlistFileId" });
       }
+
+      playLogDuration = String(playlistFileExists.duration ?? 0);
     }
 
     if (subPlaylistId) {
@@ -288,6 +301,7 @@ export const createPlayLog = async (
         where: { id: subPlaylistId },
         select: { id: true },
       });
+
       if (!subPlaylistExists) {
         return reply.status(400).send({ message: "Invalid subPlaylistId" });
       }
@@ -315,17 +329,22 @@ export const createPlayLog = async (
         fileId,
         playlistId,
         subPlaylistId,
+        duration: playLogDuration,
         isSubPlaylist,
         createdAt: now,
       },
       select: { id: true },
     });
 
-    return reply.status(200).send({ message: "Play log created", playLogId: playLog.id });
+    return reply.status(200).send({
+      message: "Play log created",
+      playLogId: playLog.id,
+    });
   } catch (e: any) {
     if (e?.code === "P2003") {
       return reply.status(400).send({ message: "Invalid reference id" });
     }
+
     const { status, payload } = toHttpError(e);
     return reply.status(status).send(payload);
   }
