@@ -34,7 +34,8 @@ const envSchema = z.object({
   BCRYPT_SALT_ROUNDS: z.string().transform(Number),
   MAX_FILE_MB: z.string().transform(Number).default("100"),
   AWS_S3_BUCKET_NAME: z.string(),
-  AWS_SES_FROM_EMAIL:z.string()
+  AWS_SES_FROM_EMAIL:z.string(),
+  CONTACT_RECEIVER_EMAIL: z.string().email(),
 });
 
 export const env = envSchema.parse(process.env);

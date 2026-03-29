@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import toHttpError from "../utils/toHttpError";
 import { prisma } from "../db/client";
 import { RateLimiterMemory } from "rate-limiter-flexible";
+import { sendContactSubmissionEmail } from "../services/email";
 
 
 type ContactBody = {
@@ -27,7 +28,6 @@ const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
-
 
 
 export const subscribeEmail = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -120,7 +120,8 @@ export const submitContactForm = async (
           lastSubmission: now,
         },
       });
-
+    const response =  await sendContactSubmissionEmail({ name, email, mobile, description });
+    console.log(response,"sendContactSubmissionEmail response")
       return reply.status(200).send({
         message: "Contact updated successfully",
       });
@@ -135,8 +136,9 @@ export const submitContactForm = async (
         lastSubmission: now,
       },
     });
-
-    return reply.status(200).send({
+    const response =  await sendContactSubmissionEmail({ name, email, mobile, description });
+    console.log(response,"sendContactSubmissionEmail response")
+    return reply.status(201).send({
       message: "Contact submitted successfully",
     });
   } catch (e: any) {
