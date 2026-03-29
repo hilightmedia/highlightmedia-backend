@@ -19,6 +19,7 @@ import trashRoutes from "./routes/trash.js";
 import tvAppRoutes from "./routes/tvapp.js";
 import analyticsRoutes from "./routes/analytics.js";
 import { sessionCleanupHook } from "./middleware/sessionCleanUpHook.js";
+import SiteRoutes from "./routes/site.js";
 
 const fastify = Fastify({
   logger: {
@@ -149,6 +150,7 @@ fastify.setErrorHandler((error, request, reply) => {
 });
 
 await fastify.register(healthRoutes, { prefix: "/api" });
+await fastify.register(SiteRoutes, { prefix: "/api" });
 await fastify.register(authRoutes, { prefix: "/api/auth" });
 await fastify.register(mediaRoutes, { prefix: "/api/media" });
 await fastify.register(playlistRoutes, { prefix: "/api/playlist" });

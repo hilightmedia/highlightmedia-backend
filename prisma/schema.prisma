@@ -193,8 +193,10 @@ model EmailSubscription {
 
 model ContactSubmissions {
   id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(100)
   email          String   @unique @db.VarChar(60)
   mobile         String   @unique @db.VarChar(15)
+  description    String   @db.Text
   createdAt      DateTime @default(now())
   lastSubmission DateTime @default(now()) @updatedAt
 }
